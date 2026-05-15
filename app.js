@@ -20,11 +20,13 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
   const baseDayW = GANTT_DAY_W[viewModeCorrente] || 22;
   const cont = document.getElementById(containerId);
   if (!cont || !giorniLen) return baseDayW;
-  const disponibile = cont.clientWidth - sideWidthApprox - 4; // -4 per scroll/border
+  // Side column più stretta su mobile (vedi media query in style.css)
+  const w = window.innerWidth;
+  const effectiveSide = w < 560 ? 130 : w < 900 ? 150 : sideWidthApprox;
+  const disponibile = cont.clientWidth - effectiveSide - 4;
   if (disponibile <= 0) return baseDayW;
-  const minimo = baseDayW;
   const fitWidth = Math.floor(disponibile / giorniLen);
-  return Math.max(minimo, fitWidth);
+  return Math.max(baseDayW, fitWidth);
 }
 
 // Set di epiche collassate nel Gantt (transiente, non persistito)

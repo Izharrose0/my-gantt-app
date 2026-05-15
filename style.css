@@ -1189,3 +1189,199 @@ input:focus, select:focus {
   padding: 0 0.5rem;
 }
 .btn-close:hover { color: #1e293b; }
+
+/* ===================================================================== */
+/* ===== RESPONSIVE / MOBILE ============================================ */
+/* ===================================================================== */
+
+/* Tablet portrait e sotto */
+@media (max-width: 900px) {
+  main { padding: 0.75rem 0.75rem 2rem; }
+  .app-header {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .app-header h1 { font-size: 1.1rem; }
+  .actions-top {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .tabs {
+    padding: 0.3rem 0.5rem 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .card {
+    padding: 0.9rem;
+    border-radius: 8px;
+  }
+
+  /* Form: una colonna su mobile */
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+  .form-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .form-inline input,
+  .form-inline select,
+  .form-inline button { width: 100%; }
+
+  /* Bottoni più grandi al tocco (>=44px) */
+  .btn {
+    min-height: 40px;
+    padding: 0.6rem 0.9rem;
+  }
+  .btn-sm { min-height: 36px; padding: 0.45rem 0.75rem; }
+
+  /* Filtri impilati */
+  .filter-bar {
+    gap: 0.5rem;
+  }
+  .filter-item {
+    flex: 1 1 calc(50% - 0.25rem);
+  }
+  .filter-item select,
+  .filter-item input { width: 100%; min-width: 0; }
+  .filter-reset { width: 100%; }
+
+  /* Gantt/Workload: colonna laterale più stretta */
+  .gantt-side, .wl-side {
+    min-width: 140px;
+    max-width: 160px;
+  }
+  .gantt-side-header, .wl-side-header {
+    padding: 0 0.6rem;
+    font-size: 0.78rem;
+  }
+  .gantt-side-row, .wl-side-row {
+    padding: 0 0.6rem;
+    font-size: 0.78rem;
+  }
+  .gantt-task-name {
+    font-size: 0.8rem;
+  }
+  .epica-mini { display: none; }
+
+  #gantt-container,
+  #workload-wrap { max-height: 65vh; }
+
+  /* Zoom: pill più compatti */
+  .gantt-controls { gap: 0.3rem; }
+  .controls-label { display: none; }
+  .btn-zoom { padding: 0.4rem 0.6rem; font-size: 0.78rem; }
+
+  /* Lista task: layout colonna su mobile */
+  .lista li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .info-task, .info-persona {
+    width: 100%;
+  }
+  .azioni-lista {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Tipo switch: wrap meglio */
+  .tipo-switch { gap: 0.5rem; }
+  .tipo-switch .hint { width: 100%; font-size: 0.78rem; }
+
+  /* Modale quasi a tutto schermo */
+  .modal-overlay { padding: 0.5rem; }
+  .modal {
+    width: 100%;
+    max-height: 92vh;
+    padding: 1.1rem;
+    border-radius: 10px;
+  }
+  .modal-header h3 { font-size: 1rem; }
+
+  /* Indicatore sync ridotto */
+  .sync-indicator .sync-label {
+    display: none;
+  }
+  .sync-indicator {
+    padding: 0.35rem;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+  }
+}
+
+/* Smartphone portrait */
+@media (max-width: 560px) {
+  h1 { font-size: 1rem; }
+  h2 { font-size: 0.95rem; }
+  main { padding: 0.5rem 0.5rem 2rem; }
+  .app-header { padding: 0.6rem 0.75rem; }
+  .card { padding: 0.7rem; }
+
+  .tab {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  /* Filtri: 1 per riga */
+  .filter-item { flex: 1 1 100%; }
+
+  /* Gantt: colonna ancora più stretta */
+  .gantt-side, .wl-side {
+    min-width: 120px;
+    max-width: 140px;
+  }
+  .gantt-side-row, .wl-side-row {
+    font-size: 0.72rem;
+  }
+  .drag-handle { display: none; }
+  .gantt-stato-dot { width: 8px; height: 8px; }
+
+  /* Header app più compatto */
+  .app-header h1 { font-size: 0.95rem; }
+  .actions-top { width: 100%; justify-content: space-between; }
+
+  /* Legenda stati: scroll orizzontale */
+  .legend-stati {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .legenda-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Workload: heat cells leggibili */
+  .wl-task-bar { font-size: 0.62rem; padding: 0 0.25rem; }
+  .wl-heat { font-size: 0.6rem; }
+
+  /* Tipo switch: opzioni più piccole */
+  .tipo-opzione { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+
+  /* Form fields: meno padding interno */
+  input[type="text"], input[type="number"], input[type="date"], select {
+    padding: 0.55rem 0.6rem;
+    font-size: 16px; /* evita zoom automatico iOS */
+  }
+
+  /* Dipendenze list più compatta */
+  .dipendenza-item {
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+  }
+}
