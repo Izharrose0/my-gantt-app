@@ -1,0 +1,19 @@
+# File di stato locale
+*.local
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Log e backup
+*.log
+*.bak
+gantt-backup-*.json
+
+# Node (se in futuro userai npm)
+node_modules/
+package-lock.json

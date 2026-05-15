@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gantt App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="app-header">
+    <h1>📊 Gantt App</h1>
+    <div class="actions-top">
+      <span id="sync-indicator" class="sync-indicator sync-loading" title="Stato sincronizzazione cloud">
+        <span class="sync-dot"></span>
+        <span class="sync-label">Collegamento…</span>
+      </span>
+      <button class="btn btn-secondary" id="btn-esporta">Esporta JSON</button>
+      <label class="btn btn-secondary">
+        Importa JSON
+        <input type="file" id="input-importa" accept=".json" hidden>
+      </label>
+    </div>
+  </header>
+
+  <!-- TAB NAVIGATION -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="persone">👥 Persone</button>
+    <button class="tab" data-tab="task">📋 Task</button>
+    <button class="tab" data-tab="gantt">📊 Gantt</button>
+    <button class="tab" data-tab="workload">⏱️ Workload</button>
+    <button class="tab" data-tab="calendario">📅 Calendario</button>
+  </nav>
+
+  <main>
+
+    <!-- =================== TAB PERSONE =================== -->
+    <section class="tab-content active" id="tab-persone">
+
+      <div class="card">
+        <h2>Aggiungi persona</h2>
+        <form id="form-persona" class="form-inline">
+          <input type="text" id="persona-nome" placeholder="Nome" required>
+          <input type="text" id="persona-ruolo" placeholder="Ruolo" required>
+          <div class="campo-fte">
+            <label>FTE</label>
+            <input type="number" id="persona-fte" min="0.1" max="1.0" step="0.1" value="1.0" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Aggiungi</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Persone registrate</h2>
+        <ul id="lista-persone" class="lista"></ul>
+      </div>
+    </section>
+
+    <!-- =================== TAB TASK =================== -->
+    <section class="tab-content" id="tab-task">
+
+      <div class="card">
+        <h2>Aggiungi</h2>
+        <div class="tipo-switch">
+          <label class="tipo-opzione">
+            <input type="radio" name="task-tipo" value="task" checked> 📋 Task
+          </label>
+          <label class="tipo-opzione">
+            <input type="radio" name="task-tipo" value="epica"> 📦 Epica
+          </label>
+          <label class="tipo-opzione">
+            <input type="radio" name="task-tipo" value="milestone"> 🔶 Milestone
+          </label>
+          <span class="hint" id="tipo-hint">Un task ha date, ore stimate, persone. Un'epica è solo un contenitore con un nome.</span>
+        </div>
+        <form id="form-task">
+          <div class="form-grid">
+            <label>
+              Nome
+              <input type="text" id="task-nome" placeholder="Nome" required>
+            </label>
+            <label class="solo-task">
+              Inizio
+              <input type="date" id="task-inizio">
+            </label>
+            <label class="solo-task">
+              Fine
+              <input type="date" id="task-fine">
+            </label>
+            <label class="solo-milestone">
+              Data milestone
+              <input type="date" id="task-data-milestone">
+            </label>
+            <label class="no-epica">
+              Stato
+              <select id="task-stato">
+                <option value="todo">To Do</option>
+                <option value="in-progress">In Progress</option>
+                <option value="done">Done</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </label>
+            <label class="solo-task">
+              Stima (ore)
+              <input type="number" id="task-stima" min="0" step="0.5" value="0">
+            </label>
+            <label class="no-epica">
+              Sotto-task di (epica)
+              <select id="task-parent">
+                <option value="">— Nessuna (task top-level) —</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="assegnazioni-section solo-task">
+            <label class="label-section">Persone assegnate (% del totale ore del task)</label>
+            <div id="lista-assegnazioni-nuovo" class="assegnazioni-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-aggiungi-assegnazione-nuovo">
+              + Aggiungi persona
+            </button>
+          </div>
+
+          <div class="dipendenze-section solo-task">
+            <label class="label-section">Dipende da (deve finire prima):</label>
+            <div id="lista-dipendenze-nuovo" class="dipendenze-list"></div>
+          </div>
+
+          <button type="submit" class="btn btn-primary" id="btn-submit-task">Aggiungi task</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Task creati</h2>
+        <ul id="lista-task" class="lista"></ul>
+      </div>
+    </section>
+
+    <!-- =================== TAB GANTT =================== -->
+    <section class="tab-content" id="tab-gantt">
+
+      <div class="card">
+        <div class="gantt-controls">
+          <span class="controls-label">Zoom:</span>
+          <button class="btn btn-zoom" data-view="Day">Giorno</button>
+          <button class="btn btn-zoom active" data-view="Week">Settimana</button>
+          <button class="btn btn-zoom" data-view="Month">Mese</button>
+          <span class="controls-spacer"></span>
+          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi">📍 Vai a oggi</button>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">📄 Esporta PDF</button>
+        </div>
+
+        <div class="filter-bar" data-view-filter="gantt">
+          <label class="filter-item">Persone <select class="filter-persone" multiple size="1"></select></label>
+          <label class="filter-item">Stato <select class="filter-stato" multiple size="1">
+            <option value="todo">To Do</option>
+            <option value="in-progress">In Progress</option>
+            <option value="done">Done</option>
+            <option value="blocked">Blocked</option>
+          </select></label>
+          <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
+          <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
+          <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
+          <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
+        </div>
+
+        <div class="legend-stati">
+          <span class="legenda-item"><span class="quadrato stato-bg-todo"></span> To Do</span>
+          <span class="legenda-item"><span class="quadrato stato-bg-in-progress"></span> In Progress</span>
+          <span class="legenda-item"><span class="quadrato stato-bg-done"></span> Done</span>
+          <span class="legenda-item"><span class="quadrato stato-bg-blocked"></span> Blocked</span>
+          <span class="legenda-item"><span class="quadrato linea-oggi-legenda"></span> Oggi</span>
+        </div>
+
+        <div id="gantt-container"></div>
+      </div>
+    </section>
+
+    <!-- =================== TAB CALENDARIO =================== -->
+    <section class="tab-content" id="tab-calendario">
+      <div class="card">
+        <h2>Festività</h2>
+        <p class="hint">Le festività non contano nei giorni lavorativi e quindi escludono il workload per tutte le persone.</p>
+        <form id="form-festivita" class="form-inline">
+          <input type="date" id="festivita-data" required>
+          <input type="text" id="festivita-nome" placeholder="Nome (es. Capodanno)" required>
+          <button type="submit" class="btn btn-primary">Aggiungi</button>
+        </form>
+        <div class="form-inline" style="margin-top:0.5rem">
+          <label>Anno
+            <input type="number" id="festivita-anno-italia" min="2000" max="2100" step="1" value="2026">
+          </label>
+          <button type="button" class="btn btn-secondary" id="btn-aggiungi-italia">
+            + Aggiungi festività italiane per l'anno
+          </button>
+        </div>
+        <ul id="lista-festivita" class="lista" style="margin-top:1rem"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Ferie / assenze per persona</h2>
+        <p class="hint">Le ferie riducono i giorni lavorativi disponibili della persona, ridistribuendo le ore di un task sui giorni restanti.</p>
+        <div id="lista-ferie-persone"></div>
+      </div>
+    </section>
+
+    <!-- =================== TAB WORKLOAD =================== -->
+    <section class="tab-content" id="tab-workload">
+      <div class="card">
+        <div class="gantt-controls">
+          <h2 style="margin:0;flex:1">Workload</h2>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">📄 Esporta PDF</button>
+        </div>
+        <p class="hint">
+          Ore/giorno = (ore stimate del task × % persona) / giorni lavorativi del task.
+          La capacità è FTE × 8h. I weekend non contano. Verde = OK, giallo = ~pieno, rosso = sovraccarico.
+        </p>
+
+        <div class="filter-bar" data-view-filter="workload">
+          <label class="filter-item">Persone <select class="filter-persone" multiple size="1"></select></label>
+          <label class="filter-item">Stato <select class="filter-stato" multiple size="1">
+            <option value="todo">To Do</option>
+            <option value="in-progress">In Progress</option>
+            <option value="done">Done</option>
+            <option value="blocked">Blocked</option>
+          </select></label>
+          <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
+          <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
+          <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
+          <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
+        </div>
+
+        <div id="workload-container"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =================== MODAL MODIFICA TASK =================== -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <header class="modal-header">
+        <h3 id="modal-titolo">Modifica task</h3>
+        <button class="btn-close" id="btn-chiudi-modal" type="button">×</button>
+      </header>
+      <form id="form-modifica-task">
+        <div class="form-grid">
+          <label>
+            Nome
+            <input type="text" id="edit-nome" required>
+          </label>
+          <label class="solo-task">
+            Inizio
+            <input type="date" id="edit-inizio">
+          </label>
+          <label class="solo-task">
+            Fine
+            <input type="date" id="edit-fine">
+          </label>
+          <label class="solo-milestone">
+            Data milestone
+            <input type="date" id="edit-data-milestone">
+          </label>
+          <label class="no-epica">
+            Stato
+            <select id="edit-stato">
+              <option value="todo">To Do</option>
+              <option value="in-progress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </label>
+          <label class="solo-task">
+            Stima (ore)
+            <input type="number" id="edit-stima" min="0" step="0.5" value="0">
+          </label>
+          <label class="no-epica">
+            Sotto-task di (epica)
+            <select id="edit-parent">
+              <option value="">— Nessuna (task top-level) —</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="assegnazioni-section solo-task">
+          <label class="label-section">Persone assegnate (% del totale ore del task)</label>
+          <div id="lista-assegnazioni-edit" class="assegnazioni-list"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-aggiungi-assegnazione-edit">
+            + Aggiungi persona
+          </button>
+        </div>
+
+        <div class="dipendenze-section solo-task">
+          <label class="label-section">Dipende da (deve finire prima):</label>
+          <div id="lista-dipendenze-edit" class="dipendenze-list"></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Salva modifiche</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL MODIFICA PERSONA =================== -->
+  <div id="modal-persona-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <header class="modal-header">
+        <h3>Modifica persona</h3>
+        <button class="btn-close" id="btn-chiudi-modal-persona" type="button">×</button>
+      </header>
+      <form id="form-modifica-persona">
+        <div class="form-grid">
+          <label>
+            Nome
+            <input type="text" id="edit-persona-nome" required>
+          </label>
+          <label>
+            Ruolo
+            <input type="text" id="edit-persona-ruolo" required>
+          </label>
+          <label>
+            FTE
+            <input type="number" id="edit-persona-fte" min="0.1" max="1.0" step="0.1" required>
+          </label>
+          <label>
+            Colore
+            <input type="color" id="edit-persona-colore">
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary">Salva modifiche</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL DETTAGLIO GIORNO WORKLOAD =================== -->
+  <div id="modal-giorno-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <header class="modal-header">
+        <h3 id="modal-giorno-titolo">Dettaglio giorno</h3>
+        <button class="btn-close" id="btn-chiudi-modal-giorno" type="button">×</button>
+      </header>
+      <div id="modal-giorno-body"></div>
+    </div>
+  </div>
+
+  <!-- Firebase: caricato prima di app.js per essere disponibile durante l'init -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+    import {
+      getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence
+    } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBLgoM5sz57pzuGDbOzsmGPlJLZHQA6YLw",
+      authDomain: "my-gantt-app-ba5ea.firebaseapp.com",
+      projectId: "my-gantt-app-ba5ea",
+      storageBucket: "my-gantt-app-ba5ea.firebasestorage.app",
+      messagingSenderId: "561640742083",
+      appId: "1:561640742083:web:ba9ab721755f49b8b21676"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Persistenza offline: i dati restano disponibili anche senza connessione
+    try {
+      await enableIndexedDbPersistence(db);
+    } catch (e) { /* persistenza non disponibile in questa tab */ }
+
+    // Esposto a app.js (non-module) tramite window
+    window.__firebase = { db, doc, onSnapshot, setDoc };
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
