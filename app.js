@@ -969,9 +969,11 @@ function avatar(persona, size = 'md') {
   return `<span class="avatar avatar-${size}" style="background:${escapeHtml(persona.colore)}" title="${escapeHtml(persona.nome)}">${escapeHtml(ini)}</span>`;
 }
 
-// True su smartphone portrait: si attiva la list-view
+// La list-view era stata pensata per smartphone, ma rende il Gantt non
+// percepibile come tale. La disattiviamo: anche su mobile mostriamo la
+// timeline classica, ottimizzata per touch.
 function isMobileListView() {
-  return window.innerWidth <= 560;
+  return false;
 }
 
 // ===== GESTIONE TAB =====
