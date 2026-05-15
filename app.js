@@ -44,6 +44,164 @@ function rerenderVista(vista) {
 }
 
 // Apre il dialog di stampa del browser (l'utente può salvare come PDF)
+// ===== REPORT SETTIMANALE =====
+
+// Restituisce {lun, ven} ISO della settimana corrente (lun-ven)
+function settimanaCorrenteLunVen() {
+  const oggi = new Date();
+  const giorno = oggi.getDay(); // 0=dom, 1=lun, ..., 6=sab
+  const lunOffset = giorno === 0 ? -6 : 1 - giorno;
+  const lun = new Date(oggi);
+  lun.setDate(oggi.getDate() + lunOffset);
+  const ven = new Date(lun);
+  ven.setDate(lun.getDate() + 4);
+  return { lun: dataISO(lun), ven: dataISO(ven) };
+}
+
+// Calcola allocazione per persona nel range: [{persona, totaleH, items:[{taskNome, ore, giorni}]}]
+function calcolaAllocazioniPeriodo(dataDa, dataA) {
+  const out = [];
+  const giorniRange = rangeDateISO(dataDa, dataA);
+  stato.persone.forEach(p => {
+    const items = [];
+    let totaleH = 0;
+    stato.task.forEach(t => {
+      if (t.tipo === 'epica' || t.tipo === 'milestone') return;
+      if (!t.assegnazioni?.length || !t.stimaOre) return;
+      const a = t.assegnazioni.find(x => x.personaId === p.id);
+      if (!a) return;
+      // Intersezione tra range richiesto e durata task
+      const inizioInt = t.inizio > dataDa ? t.inizio : dataDa;
+      const fineInt = t.fine < dataA ? t.fine : dataA;
+      if (inizioInt > fineInt) return;
+      const giorniInter = rangeDateISO(inizioInt, fineInt);
+      // Quanti giorni LAVORATIVI di p nel periodo sono coperti dal task
+      const giorniEffettivi = giorniInter.filter(g => eGiornoLavorativo(g, p.id)).length;
+      if (!giorniEffettivi) return;
+      const orePerGiorno = oreGiornaliereAssegnazione(t, a);
+      const oreTotali = orePerGiorno * giorniEffettivi;
+      totaleH += oreTotali;
+      items.push({ taskNome: t.nome, ore: oreTotali, giorni: giorniEffettivi, taskId: t.id });
+    });
+    items.sort((x, y) => y.ore - x.ore);
+    out.push({ persona: p, totaleH, items });
+  });
+  return out;
+}
+
+function renderReportSettimana() {
+  const da = document.getElementById('report-data-da').value;
+  const a  = document.getElementById('report-data-a').value;
+  const body = document.getElementById('report-body');
+  if (!da || !a || da > a) {
+    body.innerHTML = '<p class="empty-state">Seleziona un intervallo di date valido.</p>';
+    return;
+  }
+  const allocazioni = calcolaAllocazioniPeriodo(da, a);
+  // Giorni lavorativi del range (per la capacità teorica)
+  const ggLavRange = giorniLavorativi(da, a);
+
+  body.innerHTML = `
+    <p class="hint">Allocazioni dal <strong>${formatDataBreve(da)}</strong> al <strong>${formatDataBreve(a)}</strong>
+       (${ggLavRange} giorni lavorativi).</p>
+    <table class="report-tabella">
+      <thead>
+        <tr>
+          <th>Persona</th>
+          <th>Capacità</th>
+          <th>Allocate</th>
+          <th>Carico</th>
+          <th>Task assegnati</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${allocazioni.map(({ persona: p, totaleH, items }) => {
+          const ggLavPersona = giorniLavorativi(da, a, p.id);
+          const capacita = ggLavPersona * ORE_GIORNO_PIENE * p.fte;
+          const perc = capacita > 0 ? Math.round(totaleH / capacita * 100) : 0;
+          const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
+          const taskList = items.length
+            ? items.map(it =>
+                `<div class="report-task-item">${escapeHtml(it.taskNome)} — <strong>${it.ore.toFixed(1)}h</strong> <small>(${it.giorni} gg)</small></div>`
+              ).join('')
+            : '<em style="color:#94a3b8">Nessun task</em>';
+          return `
+            <tr>
+              <td>
+                <span class="badge-colore" style="background:${escapeHtml(p.colore)}"></span>
+                <strong>${escapeHtml(p.nome)}</strong><br>
+                <small style="color:#64748b">${escapeHtml(p.ruolo)} · FTE ${p.fte}</small>
+              </td>
+              <td><strong>${capacita.toFixed(0)}h</strong><br><small>${ggLavPersona} gg</small></td>
+              <td><strong>${totaleH.toFixed(1)}h</strong></td>
+              <td><span class="report-perc ${cls}">${perc}%</span></td>
+              <td class="report-task-cell">${taskList}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function apriModaleReport() {
+  const { lun, ven } = settimanaCorrenteLunVen();
+  const da = document.getElementById('report-data-da');
+  const a  = document.getElementById('report-data-a');
+  if (!da.value) da.value = lun;
+  if (!a.value)  a.value  = ven;
+  document.getElementById('modal-report-overlay').classList.remove('hidden');
+  renderReportSettimana();
+}
+
+function chiudiModaleReport() {
+  document.getElementById('modal-report-overlay').classList.add('hidden');
+}
+
+function esportaReportCSV() {
+  const da = document.getElementById('report-data-da').value;
+  const a  = document.getElementById('report-data-a').value;
+  if (!da || !a) return;
+  const allocazioni = calcolaAllocazioniPeriodo(da, a);
+
+  // Una riga per ogni (persona, task). Più una riga totale per persona.
+  const righe = [['Persona', 'Ruolo', 'FTE', 'Task', 'Ore', 'Giorni']];
+  allocazioni.forEach(({ persona: p, totaleH, items }) => {
+    if (!items.length) {
+      righe.push([p.nome, p.ruolo, p.fte, '(nessuno)', 0, 0]);
+    } else {
+      items.forEach(it => righe.push([p.nome, p.ruolo, p.fte, it.taskNome, it.ore.toFixed(2), it.giorni]));
+      righe.push([p.nome, p.ruolo, p.fte, 'TOTALE', totaleH.toFixed(2), '']);
+    }
+  });
+
+  const csv = righe.map(r =>
+    r.map(c => {
+      const s = String(c ?? '');
+      return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(';')
+  ).join('\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `report-${da}-${a}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function stampaReport() {
+  document.body.setAttribute('data-printing', 'report');
+  document.body.setAttribute('data-printing-titolo', `Report — ${document.getElementById('report-data-da').value} → ${document.getElementById('report-data-a').value}`);
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.body.removeAttribute('data-printing');
+      document.body.removeAttribute('data-printing-titolo');
+    }, 100);
+  }, 100);
+}
+
 function stampaVista(vista) {
   // Assicura che la vista sia attiva e renderizzata col filtro corrente
   attivaTab(vista);
@@ -1963,14 +2121,15 @@ function renderWorkload() {
     });
     const numCorsie = Math.max(1, corsie.length);
     const taskAreaH = numCorsie * LANE_H + ROW_PAD;
-    const rowH = taskAreaH + HEAT_H;
+    // Min height per garantire l'allineamento con la side column (~2 righe di testo)
+    const rowH = Math.max(taskAreaH + HEAT_H, 60);
 
     // Side row (con altezza dinamica)
     sideRowsArr.push(`
-      <div class="wl-side-row" style="border-left: 3px solid ${escapeHtml(p.colore)}; height:${rowH}px">
+      <div class="wl-side-row" style="border-left: 3px solid ${escapeHtml(p.colore)}; height:${rowH}px"
+           title="${escapeHtml(p.ruolo)} · FTE ${p.fte} · ${capacitaG}h/g · ${tasksPersona.length} task">
         <strong>${escapeHtml(p.nome)}</strong>
-        <small>${escapeHtml(p.ruolo)} · FTE ${escapeHtml(p.fte)} · ${capacitaG}h/g</small>
-        <small style="color:#94a3b8">${tasksPersona.length} task · ${numCorsie} corsia/e</small>
+        <small>${escapeHtml(p.ruolo)} · ${capacitaG}h/g</small>
       </div>`);
 
     // Barre task — ciascuna posizionata su una corsia diversa
@@ -2418,6 +2577,27 @@ function inizializza() {
   // --- Zoom Gantt ---
   document.querySelectorAll('.gantt-controls [data-view]').forEach(b => {
     b.addEventListener('click', () => cambiaViewMode(b.dataset.view));
+  });
+
+  // --- Modal report settimana ---
+  document.getElementById('btn-report-settimana').addEventListener('click', apriModaleReport);
+  document.getElementById('btn-chiudi-modal-report').addEventListener('click', chiudiModaleReport);
+  document.getElementById('btn-report-settimana-corr').addEventListener('click', () => {
+    const { lun, ven } = settimanaCorrenteLunVen();
+    document.getElementById('report-data-da').value = lun;
+    document.getElementById('report-data-a').value  = ven;
+    renderReportSettimana();
+  });
+  document.getElementById('report-data-da').addEventListener('change', renderReportSettimana);
+  document.getElementById('report-data-a').addEventListener('change', renderReportSettimana);
+  document.getElementById('btn-report-csv').addEventListener('click', esportaReportCSV);
+  document.getElementById('btn-report-stampa').addEventListener('click', stampaReport);
+  const overlayReport = document.getElementById('modal-report-overlay');
+  let reportMouseDown = false;
+  overlayReport.addEventListener('mousedown', e => { reportMouseDown = (e.target === overlayReport); });
+  overlayReport.addEventListener('mouseup', e => {
+    if (reportMouseDown && e.target === overlayReport) chiudiModaleReport();
+    reportMouseDown = false;
   });
 
   // --- Modal dettaglio giorno workload ---

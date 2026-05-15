@@ -214,6 +214,7 @@
       <div class="card">
         <div class="gantt-controls">
           <h2 style="margin:0;flex:1">Workload</h2>
+          <button class="btn btn-secondary btn-sm" id="btn-report-settimana">📊 Report settimana</button>
           <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">📄 Esporta PDF</button>
         </div>
         <p class="hint">
@@ -344,6 +345,28 @@
         <button class="btn-close" id="btn-chiudi-modal-giorno" type="button">×</button>
       </header>
       <div id="modal-giorno-body"></div>
+    </div>
+  </div>
+
+  <!-- =================== MODAL REPORT SETTIMANALE =================== -->
+  <div id="modal-report-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Report settimanale — chi fa cosa</h3>
+        <button class="btn-close" id="btn-chiudi-modal-report" type="button">×</button>
+      </header>
+      <div class="report-controls form-inline">
+        <label>Dal
+          <input type="date" id="report-data-da">
+        </label>
+        <label>Al
+          <input type="date" id="report-data-a">
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-settimana-corr">Settimana corrente</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-csv">⬇ CSV</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-stampa">📄 PDF</button>
+      </div>
+      <div id="report-body"></div>
     </div>
   </div>
 
