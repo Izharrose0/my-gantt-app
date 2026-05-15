@@ -31,6 +31,17 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
 
 // Set di epiche collassate nel Gantt (transiente, non persistito)
 let epicheCollassate = new Set();
+// Flag che indica se abbiamo già fatto la collapse iniziale di tutte le epiche
+let collassoInizialeFatto = false;
+
+// All'avvio chiudi tutte le epiche esistenti
+function collassaTutteEpicheInizialmente() {
+  if (collassoInizialeFatto) return;
+  stato.task.forEach(t => {
+    if (t.tipo === 'epica') epicheCollassate.add(t.id);
+  });
+  collassoInizialeFatto = true;
+}
 
 // Filtri (transienti, indipendenti per vista)
 let filtri = {
@@ -246,19 +257,34 @@ function contaFiltriAttivi(view) {
 
 function aggiornaBadgeFiltri() {
   const view = vistaAttiva();
-  const badge = document.getElementById('bb-badge-filtri');
-  if (!badge) return;
-  if (view !== 'gantt' && view !== 'workload') {
-    badge.classList.add('hidden');
-    return;
+
+  // Badge nel bottone della bottom bar (mobile)
+  const badgeMobile = document.getElementById('bb-badge-filtri');
+  if (badgeMobile) {
+    if (view !== 'gantt' && view !== 'workload') {
+      badgeMobile.classList.add('hidden');
+    } else {
+      const n = contaFiltriAttivi(view);
+      if (n > 0) { badgeMobile.textContent = n; badgeMobile.classList.remove('hidden'); }
+      else        { badgeMobile.classList.add('hidden'); }
+    }
   }
-  const n = contaFiltriAttivi(view);
-  if (n > 0) {
-    badge.textContent = n;
-    badge.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
-  }
+
+  // Badge nei chip "Filtri" della toolbar (desktop)
+  document.querySelectorAll('.btn-filtri-toggle').forEach(btn => {
+    const v = btn.dataset.viewToggle;
+    const b = btn.querySelector('.filtri-badge');
+    if (!b) return;
+    const n = contaFiltriAttivi(v);
+    if (n > 0) {
+      b.textContent = n;
+      b.classList.remove('hidden');
+      btn.classList.add('active');
+    } else {
+      b.classList.add('hidden');
+      btn.classList.remove('active');
+    }
+  });
 }
 
 function resetFiltri(view) {
@@ -508,7 +534,10 @@ function caricaStato() {
   // 1) Carico fallback locale per non mostrare schermo vuoto in attesa di Firestore
   const raw = localStorage.getItem('gantt-app-stato');
   if (raw) {
-    try { stato = migraStato(JSON.parse(raw)); } catch {}
+    try {
+      stato = migraStato(JSON.parse(raw));
+      collassaTutteEpicheInizialmente();
+    } catch {}
   }
 
   // 2) Sottoscrivi Firestore (o quando il bridge è pronto)
@@ -547,6 +576,8 @@ function avviaSyncFirestore() {
       stato.persone   = remoto.persone   || [];
       stato.task      = remoto.task      || [];
       stato.festivita = remoto.festivita || [];
+      // Alla prima snapshot collassa tutte le epiche (anche se sono arrivate da remoto)
+      collassaTutteEpicheInizialmente();
       // Cache locale aggiornata
       try { localStorage.setItem('gantt-app-stato', JSON.stringify(stato)); } catch {}
       aggiornaViste();
@@ -989,7 +1020,11 @@ function attivaTab(nome) {
     renderWeekStrip();
     setTimeout(scrollAOggi, 80);
   }
-  if (nome === 'workload') renderWorkload();
+  if (nome === 'workload') {
+    renderWorkload();
+    renderWeekStrip();
+    setTimeout(scrollWorkloadAOggi, 80);
+  }
   if (nome === 'calendario') renderCalendario();
   aggiornaBadgeFiltri();
 }
@@ -1231,19 +1266,33 @@ function renderAssegnazioni(containerId, assegnazioni) {
       assegnazioni[i].personaId = e.target.value;
       renderAssegnazioni(containerId, assegnazioni);
     });
+    row.querySelector('.input-effort-ass').addEventListener('change', e => {
+      // Su 'change' (blur o invio): auto-rebalance per portare il totale a 100
+      let valore = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+      assegnazioni[i].effort = valore;
+      ribilanciaAssegnazioni(assegnazioni, i);
+      renderAssegnazioni(containerId, assegnazioni);
+    });
     row.querySelector('.input-effort-ass').addEventListener('input', e => {
+      // Durante la digitazione: aggiorno solo il valore e il totale (no rebalance)
       assegnazioni[i].effort = Number(e.target.value) || 0;
-      // Aggiorno il totale in tempo reale senza ri-creare gli input
       const tot = assegnazioni.reduce((s, a) => s + (Number(a.effort) || 0), 0);
       const totEl = c.querySelector('.assegnazioni-totale');
       if (totEl) {
-        totEl.textContent = `Totale: ${tot}%${tot === 100 ? ' ✓' : ' — dovrebbe essere 100%'}`;
+        totEl.textContent = `Totale: ${tot}%${tot === 100 ? ' ✓' : ' — sistemerò a 100% al rilascio'}`;
         totEl.classList.toggle('ok', tot === 100);
         totEl.classList.toggle('warn', tot !== 100);
       }
     });
     row.querySelector('.btn-rimuovi-ass').addEventListener('click', () => {
       assegnazioni.splice(i, 1);
+      // Ridistribuisci il 100% tra le persone rimaste
+      if (assegnazioni.length) {
+        const n = assegnazioni.length;
+        const each = Math.floor(100 / n);
+        assegnazioni.forEach(a => a.effort = each);
+        assegnazioni[n - 1].effort += 100 - each * n;
+      }
       renderAssegnazioni(containerId, assegnazioni);
     });
   });
@@ -1261,8 +1310,51 @@ function validaSommaEffort(assegnazioni) {
 }
 
 function aggiungiRigaAssegnazione(containerId, assegnazioni) {
-  assegnazioni.push({ personaId: '', effort: 100 });
+  // Aggiungi e distribuisci 100% equamente tra tutte le persone (l'ultima prende il resto)
+  assegnazioni.push({ personaId: '', effort: 0 });
+  const n = assegnazioni.length;
+  const each = Math.floor(100 / n);
+  assegnazioni.forEach(a => a.effort = each);
+  assegnazioni[n - 1].effort += 100 - each * n;
   renderAssegnazioni(containerId, assegnazioni);
+}
+
+// Tiene fisso l'effort di `indiceModificato` e distribuisce il resto sugli altri
+// proporzionalmente, garantendo che la somma sia 100.
+function ribilanciaAssegnazioni(assegnazioni, indiceModificato) {
+  if (!assegnazioni.length) return;
+  const mod = assegnazioni[indiceModificato];
+  mod.effort = Math.max(0, Math.min(100, Number(mod.effort) || 0));
+  const altri = assegnazioni.filter((_, i) => i !== indiceModificato);
+  const restante = 100 - mod.effort;
+
+  if (!altri.length) {
+    mod.effort = 100;
+    return;
+  }
+  if (restante <= 0) {
+    altri.forEach(a => a.effort = 0);
+    mod.effort = 100;
+    return;
+  }
+  const sommaAltri = altri.reduce((s, a) => s + (Number(a.effort) || 0), 0);
+  if (sommaAltri === 0) {
+    // Distribuzione equa con resto sull'ultimo per arrivare esattamente a 100
+    const base = Math.floor(restante / altri.length);
+    altri.forEach(a => a.effort = base);
+    altri[altri.length - 1].effort += restante - base * altri.length;
+  } else {
+    // Proporzionale alla quota corrente
+    let allocato = 0;
+    altri.forEach((a, idx) => {
+      if (idx === altri.length - 1) {
+        a.effort = restante - allocato; // l'ultimo prende il resto esatto
+      } else {
+        a.effort = Math.round((Number(a.effort) || 0) / sommaAltri * restante);
+        allocato += a.effort;
+      }
+    });
+  }
 }
 
 // ===== DIPENDENZE NEI FORM =====
@@ -1339,7 +1431,10 @@ function renderTaskHTML(tasks, livello = 0) {
         }).join('');
 
     const indent = livello * 24;
-    const figliHTML = figli.length ? renderTaskHTML(figli, livello + 1) : '';
+    // Salta i figli se l'epica è collassata
+    const figliHTML = (figli.length && !(isEpica && epicheCollassate.has(t.id)))
+      ? renderTaskHTML(figli, livello + 1)
+      : '';
     const liClass = [
       isEpica ? 'task-epica' : (isMilestone ? 'task-milestone' : 'task-leaf'),
       isEpica ? 'drop-target' : ''
@@ -1354,7 +1449,7 @@ function renderTaskHTML(tasks, livello = 0) {
            <span class="label-fte epica-badge" title="Completamento">${agg.completamento}%</span>`
         : '<em style="color:#94a3b8">vuota — trascina qui dei task</em>';
     } else if (isMilestone) {
-      datiMeta = `<span>📅 ${formatDataBreve(t.inizio)}</span>`;
+      datiMeta = `<span>Data: ${formatDataBreve(t.inizio)}</span>`;
     } else {
       datiMeta = `<span>${formatDataBreve(inizioMostrato)} → ${formatDataBreve(fineMostrata)}</span>
          <span class="label-fte" title="Stima manuale">⏱ ${stima}h</span>
@@ -1362,10 +1457,10 @@ function renderTaskHTML(tasks, livello = 0) {
     }
 
     const chevron = isEpica
-      ? '<span class="task-tree-chevron">▾</span>'
+      ? `<span class="task-tree-chevron task-chevron-toggle" data-toggle-task="${t.id}">${epicheCollassate.has(t.id) ? '▸' : '▾'}</span>`
       : (isMilestone
-          ? '<span class="task-tree-chevron leaf">🔶</span>'
-          : '<span class="task-tree-chevron leaf">⋮⋮</span>');
+          ? '<span class="task-tree-chevron leaf"><span class="milestone-diamond"></span></span>'
+          : '<span class="task-tree-chevron leaf">·</span>');
 
     const badgeTipo = isEpica
       ? '<span class="label-fte epica-badge">EPICA</span>'
@@ -2181,10 +2276,10 @@ function disegnaFrecceDipendenze(dayW, minDate) {
 
 function cambiaViewMode(vm) {
   viewModeCorrente = vm;
-  document.querySelectorAll('.gantt-controls [data-view]').forEach(b =>
+  // Aggiorna evidenza pillgroup sia nel Gantt che nel Workload
+  document.querySelectorAll('.toolbar [data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === vm));
   renderGantt();
-  // Il workload usa lo stesso zoom: ri-renderizza anche quello
   renderWorkload();
 }
 
@@ -2234,6 +2329,7 @@ function toggleCollassoEpica(epicaId) {
   if (epicheCollassate.has(epicaId)) epicheCollassate.delete(epicaId);
   else epicheCollassate.add(epicaId);
   renderGantt();
+  renderTask();
 }
 
 // ===== WEEK STRIP (sopra il Gantt) =====
@@ -2245,13 +2341,18 @@ let weekStripGiornoSelezionato = null; // ISO del giorno cliccato (per evidenzia
 const GIORNI_NOMI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 
 function renderWeekStrip() {
-  const container = document.getElementById('week-strip-days');
+  // Renderizza sia la week strip Gantt che quella Workload
+  renderWeekStripIn('week-strip-days', 'gantt');
+  renderWeekStripIn('week-strip-days-wl', 'workload');
+}
+
+function renderWeekStripIn(containerId, vista) {
+  const container = document.getElementById(containerId);
   if (!container) return;
 
   const oggiISO = dataISOoggi();
   const oggi = new Date(oggiISO);
-  // Lunedì della settimana attuale + offset
-  const giornoSett = oggi.getDay(); // 0=Dom..6=Sab
+  const giornoSett = oggi.getDay();
   const lunOffset = giornoSett === 0 ? -6 : 1 - giornoSett;
   const lunedi = new Date(oggi);
   lunedi.setDate(oggi.getDate() + lunOffset + weekStripOffset);
@@ -2284,10 +2385,52 @@ function renderWeekStrip() {
   container.querySelectorAll('.week-day').forEach(el => {
     el.addEventListener('click', () => {
       weekStripGiornoSelezionato = el.dataset.iso;
-      scrollGanttAlGiorno(el.dataset.iso);
-      renderWeekStrip(); // aggiorna evidenza "selected"
+      if (vista === 'workload') {
+        scrollWorkloadAlGiorno(el.dataset.iso);
+      } else {
+        scrollGanttAlGiorno(el.dataset.iso);
+      }
+      renderWeekStrip();
     });
   });
+}
+
+function scrollWorkloadAlGiorno(isoTarget) {
+  const container = document.getElementById('workload-container');
+  if (!container) return;
+  const range = calcolaRangeGantt(filtri.workload);
+  if (!range) return;
+  if (isoTarget < range.min || isoTarget > range.max) {
+    filtri.workload.dataDa = isoTarget;
+    const fine = new Date(isoTarget);
+    fine.setDate(fine.getDate() + 14);
+    filtri.workload.dataA = dataISO(fine);
+    popolaFiltri();
+    renderWorkload();
+    setTimeout(() => scrollWorkloadAlGiorno(isoTarget), 50);
+    return;
+  }
+  const giorni = rangeDateISO(range.min, range.max);
+  const idx = giorni.indexOf(isoTarget);
+  if (idx === -1) return;
+  const dayW = calcolaDayWAdattivo('workload-container', 240, giorni.length);
+  const xTarget = idx * dayW + dayW / 2;
+  const side = container.querySelector('.wl-side');
+  const sideW = side ? side.offsetWidth : 0;
+  const visibile = container.clientWidth - sideW;
+  container.scrollLeft = xTarget - visibile / 2;
+}
+
+function scrollWorkloadAOggi() {
+  const container = document.getElementById('workload-container');
+  if (!container) return;
+  const line = container.querySelector('.wl-today-line');
+  const side = container.querySelector('.wl-side');
+  if (!line) return;
+  const lineLeft = parseFloat(line.style.left) || 0;
+  const sideW = side ? side.offsetWidth : 0;
+  const visibile = container.clientWidth - sideW;
+  container.scrollLeft = lineLeft - visibile / 2;
 }
 
 function scrollGanttAlGiorno(isoTarget) {
@@ -2748,6 +2891,13 @@ function inizializza() {
   });
   const listaTask = document.getElementById('lista-task');
   listaTask.addEventListener('click', e => {
+    // Click sul chevron dell'epica → toggle collasso
+    const chev = e.target.closest('.task-chevron-toggle');
+    if (chev) {
+      e.stopPropagation();
+      toggleCollassoEpica(chev.dataset.toggleTask);
+      return;
+    }
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     const id = btn.dataset.id;
@@ -2932,11 +3082,6 @@ function inizializza() {
     overlayMouseDown = false;
   });
 
-  // --- Zoom Gantt ---
-  document.querySelectorAll('.gantt-controls [data-view]').forEach(b => {
-    b.addEventListener('click', () => cambiaViewMode(b.dataset.view));
-  });
-
   // --- Modal report settimana ---
   document.getElementById('btn-report-settimana').addEventListener('click', apriModaleReport);
   document.getElementById('btn-chiudi-modal-report').addEventListener('click', chiudiModaleReport);
@@ -2978,11 +3123,35 @@ function inizializza() {
     scrollAOggi();
   });
 
-  // --- Week strip nav prev/next ---
+  // --- Week strip nav prev/next (Gantt + Workload) ---
   document.querySelectorAll('.week-nav').forEach(btn => {
     btn.addEventListener('click', () => {
-      weekStripOffset += (btn.dataset.weekNav === 'next' ? 7 : -7);
+      const direction = btn.dataset.weekNav || btn.dataset.weekNavWl;
+      weekStripOffset += (direction === 'next' ? 7 : -7);
       renderWeekStrip();
+    });
+  });
+
+  // --- Workload: bottone "Oggi" ---
+  const btnOggiWl = document.getElementById('btn-vai-oggi-wl');
+  if (btnOggiWl) btnOggiWl.addEventListener('click', () => {
+    weekStripOffset = 0;
+    weekStripGiornoSelezionato = null;
+    renderWeekStrip();
+    scrollWorkloadAOggi();
+  });
+
+  // --- Zoom: listener su tutti gli zoom buttons (Gantt + Workload condividono lo stesso viewModeCorrente) ---
+  document.querySelectorAll('.toolbar [data-view]').forEach(b => {
+    b.addEventListener('click', () => cambiaViewMode(b.dataset.view));
+  });
+
+  // --- Toggle filter bar desktop (click su "Filtri" nella toolbar) ---
+  document.querySelectorAll('.btn-filtri-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.viewToggle;
+      const bar = document.querySelector(`.filter-bar[data-view-filter="${v}"]`);
+      if (bar) bar.classList.toggle('collapsed');
     });
   });
 

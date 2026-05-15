@@ -151,18 +151,23 @@
     <!-- =================== TAB GANTT =================== -->
     <section class="tab-content active" id="tab-gantt">
 
-      <div class="card">
-        <div class="gantt-controls">
-          <span class="controls-label">Zoom:</span>
-          <button class="btn btn-zoom" data-view="Day">Giorno</button>
-          <button class="btn btn-zoom active" data-view="Week">Settimana</button>
-          <button class="btn btn-zoom" data-view="Month">Mese</button>
-          <span class="controls-spacer"></span>
-          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi">Vai a oggi</button>
-          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">Esporta PDF</button>
+      <div class="card card-gantt">
+        <div class="toolbar">
+          <div class="toolbar-group toolbar-zoom">
+            <button class="btn btn-zoom" data-view="Day">G</button>
+            <button class="btn btn-zoom active" data-view="Week">S</button>
+            <button class="btn btn-zoom" data-view="Month">M</button>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi">Oggi</button>
+          <span class="toolbar-spacer"></span>
+          <button type="button" class="btn btn-secondary btn-sm btn-filtri-toggle" data-view-toggle="gantt">
+            Filtri
+            <span class="filtri-badge hidden">0</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">PDF</button>
         </div>
 
-        <div class="filter-bar" data-view-filter="gantt">
+        <div class="filter-bar collapsed" data-view-filter="gantt">
           <label class="filter-item">Persone <select class="filter-persone" multiple size="1"></select></label>
           <label class="filter-item">Stato <select class="filter-stato" multiple size="1">
             <option value="todo">To Do</option>
@@ -180,14 +185,6 @@
           <button type="button" class="week-nav" data-week-nav="prev" aria-label="Settimana precedente">‹</button>
           <div class="week-strip-days" id="week-strip-days"></div>
           <button type="button" class="week-nav" data-week-nav="next" aria-label="Settimana successiva">›</button>
-        </div>
-
-        <div class="legend-stati">
-          <span class="legenda-item"><span class="quadrato stato-bg-todo"></span> To Do</span>
-          <span class="legenda-item"><span class="quadrato stato-bg-in-progress"></span> In Progress</span>
-          <span class="legenda-item"><span class="quadrato stato-bg-done"></span> Done</span>
-          <span class="legenda-item"><span class="quadrato stato-bg-blocked"></span> Blocked</span>
-          <span class="legenda-item"><span class="quadrato linea-oggi-legenda"></span> Oggi</span>
         </div>
 
         <div id="gantt-container"></div>
@@ -224,18 +221,30 @@
 
     <!-- =================== TAB WORKLOAD =================== -->
     <section class="tab-content" id="tab-workload">
-      <div class="card">
-        <div class="gantt-controls">
-          <h2 style="margin:0;flex:1">Workload</h2>
-          <button class="btn btn-secondary btn-sm" id="btn-report-settimana">Report settimana</button>
-          <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">Esporta PDF</button>
+      <div class="card card-gantt">
+        <div class="toolbar">
+          <div class="toolbar-group toolbar-zoom">
+            <button class="btn btn-zoom" data-view="Day">G</button>
+            <button class="btn btn-zoom active" data-view="Week">S</button>
+            <button class="btn btn-zoom" data-view="Month">M</button>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi-wl">Oggi</button>
+          <button class="btn btn-secondary btn-sm" id="btn-report-settimana">Report</button>
+          <span class="toolbar-spacer"></span>
+          <button type="button" class="btn btn-secondary btn-sm btn-filtri-toggle" data-view-toggle="workload">
+            Filtri
+            <span class="filtri-badge hidden">0</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">PDF</button>
         </div>
-        <p class="hint">
-          Ore/giorno = (ore stimate del task × % persona) / giorni lavorativi del task.
-          La capacità è FTE × 8h. I weekend non contano. Verde = OK, giallo = ~pieno, rosso = sovraccarico.
-        </p>
 
-        <div class="filter-bar" data-view-filter="workload">
+        <div class="week-strip" id="week-strip-wl">
+          <button type="button" class="week-nav" data-week-nav-wl="prev" aria-label="Settimana precedente">‹</button>
+          <div class="week-strip-days" id="week-strip-days-wl"></div>
+          <button type="button" class="week-nav" data-week-nav-wl="next" aria-label="Settimana successiva">›</button>
+        </div>
+
+        <div class="filter-bar collapsed" data-view-filter="workload">
           <label class="filter-item">Persone <select class="filter-persone" multiple size="1"></select></label>
           <label class="filter-item">Stato <select class="filter-stato" multiple size="1">
             <option value="todo">To Do</option>

@@ -364,7 +364,19 @@ input:focus, select:focus {
   display: inline-block;
   text-align: center;
 }
-.task-tree-chevron.leaf { color: #cbd5e1; }
+.task-tree-chevron.leaf { color: #cbd5e1; cursor: default; }
+.task-tree-chevron.task-chevron-toggle {
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 4px 6px;
+  border-radius: 4px;
+  width: auto;
+  transition: background 0.15s ease;
+}
+.task-tree-chevron.task-chevron-toggle:hover {
+  background: var(--color-surface-3);
+  color: var(--color-primary-hover);
+}
 .lista li.task-epica {
   background: #f8fafc;
   border-left: 3px solid #2563eb;
@@ -1620,6 +1632,28 @@ label { color: var(--color-text-muted) !important; }
   border-left-color: var(--color-primary) !important;
 }
 .lista li.task-epica strong { color: var(--color-primary) !important; }
+.lista li.task-milestone {
+  background: rgba(250, 204, 21, 0.08) !important;
+  border-left: 3px solid var(--color-warning) !important;
+  color: var(--color-text);
+}
+.lista li.task-milestone strong { color: var(--color-warning); }
+.lista li.task-milestone .badge-stato.stato-done {
+  background: var(--color-success) !important;
+}
+/* Diamante mini al posto dell'emoji per la milestone */
+.milestone-diamond {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--color-warning);
+  transform: rotate(45deg);
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.lista li.task-milestone.stato-row-done .milestone-diamond {
+  background: var(--color-success);
+}
 .empty-state { color: var(--color-text-subtle) !important; }
 .label-fte {
   background: var(--color-surface-2) !important;
@@ -1719,7 +1753,15 @@ label { color: var(--color-text-muted) !important; }
 .wl-task-bar {
   border-radius: var(--radius-pill) !important;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+  cursor: pointer !important;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
+.wl-task-bar:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.15);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4) !important;
+}
+.wl-task-bar:active { transform: translateY(0); }
 
 /* Stati: tinte adattate al dark theme (più sature/luminose) */
 .gantt-bar.stato-todo,        .wl-task-bar.stato-todo        { background: #64748b !important; color: white; }
@@ -2424,6 +2466,103 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   font-size: 0.8rem;
 }
 
+/* =====================================================================
+   ===== TOOLBAR COMPATTA + FILTER BAR COLLAPSED + CHART FULL =========
+   ===================================================================== */
+
+.card-gantt {
+  padding: 0.85rem !important;
+  margin-bottom: 0 !important;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+}
+.toolbar-group {
+  display: inline-flex;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.toolbar-group .btn-zoom {
+  padding: 0.35rem 0.7rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--radius-pill) !important;
+  min-width: 32px;
+  color: var(--color-text-muted) !important;
+}
+.toolbar-group .btn-zoom.active {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+.toolbar-spacer { flex: 1; }
+
+.btn-filtri-toggle { position: relative; }
+.btn-filtri-toggle .filtri-badge {
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 0.25rem;
+}
+.btn-filtri-toggle .filtri-badge.hidden { display: none; }
+.btn-filtri-toggle.active {
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary-hover) !important;
+  border-color: var(--color-primary) !important;
+}
+
+.filter-bar.collapsed { display: none; }
+.filter-bar:not(.collapsed) {
+  animation: slide-down 0.18s ease;
+  margin-bottom: 0.6rem;
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Week strip slim */
+.week-strip {
+  padding: 0.35rem 0.5rem !important;
+  margin-bottom: 0.6rem !important;
+}
+.week-day {
+  padding: 0.3rem 0.25rem !important;
+  border-radius: var(--radius-sm) !important;
+  min-height: 38px !important;
+}
+.week-day .week-day-name {
+  font-size: 0.62rem !important;
+  opacity: 0.7;
+}
+.week-day .week-day-num {
+  font-size: 0.95rem !important;
+  margin-top: 0 !important;
+}
+.week-nav {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 1rem !important;
+}
+
+/* Chart container: riempi il viewport */
+#gantt-container,
+#workload-wrap {
+  min-height: calc(100vh - 270px) !important;
+  max-height: calc(100vh - 200px) !important;
+}
+
 /* Mobile (≤560px): ottimizzo la TIMELINE per touch, non list-view */
 @media (max-width: 560px) {
   /* Controlli più compatti */
@@ -2465,14 +2604,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .week-day .week-day-num { font-size: 0.85rem; }
   .week-nav { width: 28px; height: 28px; font-size: 1rem; }
 
-  /* Container Gantt/Workload: max-height più alta per riempire schermo */
+  /* Container Gantt/Workload: riempi tutto lo spazio disponibile sotto la toolbar */
   #gantt-container,
   #workload-wrap {
-    max-height: 75vh;
+    min-height: calc(100vh - 230px) !important;
+    max-height: calc(100vh - 180px) !important;
     -webkit-overflow-scrolling: touch;
-    /* Permette scroll orizzontale via pan-x; il pan-y resta della pagina */
     overscroll-behavior-x: contain;
   }
+  /* Toolbar mobile: compatta */
+  .toolbar { gap: 0.3rem; margin-bottom: 0.4rem; }
+  .toolbar-group { padding: 2px; }
+  .toolbar-group .btn-zoom { padding: 0.3rem 0.55rem !important; min-width: 28px; }
 
   /* Side column più stretta su smartphone */
   .gantt-side, .wl-side {
