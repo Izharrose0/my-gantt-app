@@ -851,7 +851,11 @@ function attivaTab(nome) {
   document.querySelectorAll('.tab-content').forEach(c =>
     c.classList.toggle('active', c.id === `tab-${nome}`));
   // Quando entro nelle tab grafiche, ri-renderizzo per avere dimensioni corrette
-  if (nome === 'gantt') renderGantt();
+  if (nome === 'gantt') {
+    renderGantt();
+    // Centra automaticamente sulla data di oggi così vedi subito "ora"
+    setTimeout(scrollAOggi, 80);
+  }
   if (nome === 'workload') renderWorkload();
   if (nome === 'calendario') renderCalendario();
 }
@@ -2706,6 +2710,10 @@ function inizializza() {
 
   // Primo render
   aggiornaViste();
+  // Scroll automatico a oggi all'apertura, se la tab attiva è il Gantt
+  if (document.querySelector('.tab.active')?.dataset.tab === 'gantt') {
+    setTimeout(scrollAOggi, 100);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', inizializza);
