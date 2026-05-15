@@ -227,6 +227,125 @@ function stampaVista(vista) {
 }
 
 // Popola le option dei select-filtro (persone + epiche) per entrambe le viste
+// ===== BOTTOM SHEET FILTRI (mobile) =====
+
+function vistaAttiva() {
+  return document.querySelector('.tab.active')?.dataset.tab || 'gantt';
+}
+
+function contaFiltriAttivi(view) {
+  const f = filtri[view];
+  if (!f) return 0;
+  let n = 0;
+  if (f.persone?.length) n++;
+  if (f.stati?.length)   n++;
+  if (f.epica)            n++;
+  if (f.dataDa || f.dataA) n++;
+  return n;
+}
+
+function aggiornaBadgeFiltri() {
+  const view = vistaAttiva();
+  const badge = document.getElementById('bb-badge-filtri');
+  if (!badge) return;
+  if (view !== 'gantt' && view !== 'workload') {
+    badge.classList.add('hidden');
+    return;
+  }
+  const n = contaFiltriAttivi(view);
+  if (n > 0) {
+    badge.textContent = n;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function resetFiltri(view) {
+  filtri[view] = { persone: [], stati: [], epica: '', dataDa: '', dataA: '' };
+  popolaFiltri();
+  if (view === 'gantt')    renderGantt();
+  if (view === 'workload') renderWorkload();
+}
+
+function apriBottomSheetFiltri() {
+  const view = vistaAttiva();
+  if (view !== 'gantt' && view !== 'workload') {
+    alert('I filtri sono disponibili solo nelle viste Gantt e Workload.');
+    return;
+  }
+  const f = filtri[view];
+  const body = document.getElementById('bs-filtri-body');
+  const epiche = stato.task.filter(t => t.tipo === 'epica');
+  const persSel = new Set(f.persone || []);
+  const statiSel = new Set(f.stati || []);
+
+  body.innerHTML = `
+    <div class="filter-item">
+      <label>Persone</label>
+      <select class="bs-filter-persone" multiple size="6">
+        ${stato.persone.map(p =>
+          `<option value="${p.id}" ${persSel.has(p.id) ? 'selected' : ''}>${escapeHtml(p.nome)}</option>`
+        ).join('')}
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>Stato</label>
+      <select class="bs-filter-stato" multiple size="4">
+        <option value="todo" ${statiSel.has('todo') ? 'selected' : ''}>To Do</option>
+        <option value="in-progress" ${statiSel.has('in-progress') ? 'selected' : ''}>In Progress</option>
+        <option value="done" ${statiSel.has('done') ? 'selected' : ''}>Done</option>
+        <option value="blocked" ${statiSel.has('blocked') ? 'selected' : ''}>Blocked</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>Epica</label>
+      <select class="bs-filter-epica">
+        <option value="">— Tutte —</option>
+        ${epiche.map(e => `<option value="${e.id}" ${f.epica === e.id ? 'selected' : ''}>${escapeHtml(e.nome)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>Dal</label>
+      <input type="date" class="bs-filter-data-da" value="${f.dataDa || ''}">
+    </div>
+    <div class="filter-item">
+      <label>Al</label>
+      <input type="date" class="bs-filter-data-a" value="${f.dataA || ''}">
+    </div>
+    <div style="display:flex; gap:0.5rem; margin-top:0.5rem">
+      <button type="button" class="btn btn-secondary" id="bs-reset" style="flex:1">Reset</button>
+      <button type="button" class="btn btn-primary" id="bs-applica" style="flex:1">Applica</button>
+    </div>
+  `;
+
+  document.getElementById('bottom-sheet-filtri').classList.remove('hidden');
+
+  body.querySelector('#bs-reset').addEventListener('click', () => {
+    resetFiltri(view);
+    chiudiBottomSheet();
+    aggiornaBadgeFiltri();
+  });
+  body.querySelector('#bs-applica').addEventListener('click', () => {
+    filtri[view] = {
+      persone: Array.from(body.querySelector('.bs-filter-persone').selectedOptions).map(o => o.value),
+      stati:   Array.from(body.querySelector('.bs-filter-stato').selectedOptions).map(o => o.value),
+      epica:   body.querySelector('.bs-filter-epica').value,
+      dataDa:  body.querySelector('.bs-filter-data-da').value,
+      dataA:   body.querySelector('.bs-filter-data-a').value
+    };
+    popolaFiltri();
+    if (view === 'gantt')    renderGantt();
+    if (view === 'workload') renderWorkload();
+    chiudiBottomSheet();
+    aggiornaBadgeFiltri();
+  });
+}
+
+function chiudiBottomSheet() {
+  document.getElementById('bottom-sheet-filtri').classList.add('hidden');
+}
+
 function popolaFiltri() {
   document.querySelectorAll('.filter-bar').forEach(bar => {
     const vista = bar.dataset.viewFilter;
@@ -843,6 +962,18 @@ function inizialiNome(nome) {
   return nome.split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 3);
 }
 
+// Avatar HTML: cerchietto colorato con iniziali della persona
+function avatar(persona, size = 'md') {
+  if (!persona) return '';
+  const ini = inizialiNome(persona.nome).slice(0, 2);
+  return `<span class="avatar avatar-${size}" style="background:${escapeHtml(persona.colore)}" title="${escapeHtml(persona.nome)}">${escapeHtml(ini)}</span>`;
+}
+
+// True su smartphone portrait: si attiva la list-view
+function isMobileListView() {
+  return window.innerWidth <= 560;
+}
+
 // ===== GESTIONE TAB =====
 
 function attivaTab(nome) {
@@ -853,11 +984,12 @@ function attivaTab(nome) {
   // Quando entro nelle tab grafiche, ri-renderizzo per avere dimensioni corrette
   if (nome === 'gantt') {
     renderGantt();
-    // Centra automaticamente sulla data di oggi così vedi subito "ora"
+    renderWeekStrip();
     setTimeout(scrollAOggi, 80);
   }
   if (nome === 'workload') renderWorkload();
   if (nome === 'calendario') renderCalendario();
+  aggiornaBadgeFiltri();
 }
 
 // ===== PERSONE =====
@@ -868,7 +1000,7 @@ function renderPersone() {
     ? stato.persone.map(p => `
       <li>
         <div class="info-persona">
-          <span class="badge-colore" style="background:${escapeHtml(p.colore)}"></span>
+          ${avatar(p, 'lg')}
           <strong>${escapeHtml(p.nome)}</strong>
           <span>${escapeHtml(p.ruolo)}</span>
           <span class="label-fte">FTE ${escapeHtml(p.fte)}</span>
@@ -1201,7 +1333,7 @@ function renderTaskHTML(tasks, livello = 0) {
       : (t.assegnazioni || []).map(a => {
           const p = trovaPersona(a.personaId);
           if (!p) return '';
-          return `<span class="label-persona-tag" style="background:${escapeHtml(p.colore)}">${escapeHtml(p.nome)} ${a.effort}%</span>`;
+          return `<span class="label-persona-tag">${avatar(p, 'xs')} ${escapeHtml(p.nome)} <small>${a.effort}%</small></span>`;
         }).join('');
 
     const indent = livello * 24;
@@ -1476,7 +1608,138 @@ function calcolaRangeGantt(filtro) {
   return { min: dataISO(min), max: dataISO(max) };
 }
 
+// ===== MOBILE LIST VIEWS (Fase 3) =====
+
+function renderGanttListView() {
+  const container = document.getElementById('gantt-container');
+  if (!container) return;
+
+  if (!stato.task.length) {
+    container.innerHTML = '<p class="empty-state">Nessun task. Premi + in basso per crearne uno.</p>';
+    return;
+  }
+
+  const ammessi = taskAmmessi(filtri.gantt);
+  const taskOrdinati = ordineGerarchicoTask(false, ammessi);
+
+  const html = taskOrdinati.map(({ task: t, livello, isEpica }) => {
+    const indent = livello * 12;
+
+    if (isEpica) {
+      const agg = aggregaEpica(t);
+      const figli = stato.task.filter(c => c.parentId === t.id);
+      const figliCount = figli.length;
+      return `
+        <div class="mlv-epica-header" data-id="${t.id}" style="margin-left:${indent}px">
+          <span class="mlv-epica-label">EPICA</span>
+          <span class="mlv-epica-name">${escapeHtml(t.nome)}</span>
+          <span class="mlv-epica-meta">${agg.completamento}% · ${figliCount} task</span>
+        </div>`;
+    }
+
+    if (t.tipo === 'milestone') {
+      return `
+        <div class="mlv-card mlv-card-milestone" data-id="${t.id}" style="margin-left:${indent}px">
+          <span class="mlv-diamond stato-bg-${t.stato}"></span>
+          <span class="mlv-card-name">${escapeHtml(t.nome)}</span>
+          <small class="mlv-meta">${formatDataBreve(t.inizio)}</small>
+        </div>`;
+    }
+
+    const persone = (t.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
+    const avatars = persone.slice(0, 3).map(p => avatar(p, 'xs')).join('');
+    const extra = persone.length > 3 ? `<span class="avatar avatar-xs" style="background:#475569">+${persone.length - 3}</span>` : '';
+
+    return `
+      <div class="mlv-card" data-id="${t.id}" style="margin-left:${indent}px">
+        <span class="mlv-stato-dot stato-bg-${t.stato}"></span>
+        <span class="mlv-card-name">${escapeHtml(t.nome)}</span>
+        <div class="avatar-group">${avatars}${extra}</div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="mobile-list-view">${html}</div>`;
+
+  container.querySelectorAll('[data-id]').forEach(el => {
+    el.addEventListener('click', () => apriModaleTask(el.dataset.id));
+  });
+}
+
+function renderWorkloadListView() {
+  const container = document.getElementById('workload-container');
+  if (!container) return;
+
+  if (!stato.persone.length || !stato.task.length) {
+    container.innerHTML = '<p class="empty-state">Aggiungi persone e task per vedere il workload.</p>';
+    return;
+  }
+
+  // Range: usa filtro se settato, altrimenti settimana corrente lun-ven
+  const f = filtri.workload;
+  let da = f.dataDa, a = f.dataA;
+  if (!da || !a) {
+    const sett = settimanaCorrenteLunVen();
+    da = da || sett.lun;
+    a  = a  || sett.ven;
+  }
+
+  const allocazioni = calcolaAllocazioniPeriodo(da, a);
+  const ammessi = taskAmmessi(filtri.workload);
+
+  const html = allocazioni.map(({ persona: p, totaleH, items }) => {
+    if (filtri.workload.persone?.length && !filtri.workload.persone.includes(p.id)) return '';
+
+    const ggLavPersona = giorniLavorativi(da, a, p.id);
+    const capacita = ggLavPersona * ORE_GIORNO_PIENE * p.fte;
+    const perc = capacita > 0 ? Math.round(totaleH / capacita * 100) : 0;
+    const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
+
+    const itemsHTML = items.length
+      ? items
+          .filter(it => !ammessi || ammessi.has(it.taskId))
+          .map(it => {
+            const task = stato.task.find(x => x.id === it.taskId);
+            const statoVis = task?.stato || 'todo';
+            return `
+              <li class="mlv-wl-task" data-task-id="${it.taskId}">
+                <span class="mlv-stato-dot stato-bg-${statoVis}"></span>
+                <span class="mlv-card-name">${escapeHtml(it.taskNome)}</span>
+                <small class="mlv-meta">${it.ore.toFixed(1)}h</small>
+              </li>`;
+          }).join('')
+      : '<li class="mlv-wl-empty">Nessun task</li>';
+
+    return `
+      <div class="mlv-person-card">
+        <header class="mlv-person-header">
+          ${avatar(p, 'md')}
+          <div class="mlv-person-info">
+            <strong>${escapeHtml(p.nome)}</strong>
+            <small>${escapeHtml(p.ruolo)} · ${capacita.toFixed(0)}h cap.</small>
+          </div>
+          <span class="mlv-perc mlv-perc-${cls}">${perc}%</span>
+        </header>
+        <ul class="mlv-wl-tasks">${itemsHTML}</ul>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="mlv-workload">
+      <p class="hint" style="margin:0 0 0.6rem 0;text-align:center">
+        ${formatDataBreve(da)} → ${formatDataBreve(a)}
+      </p>
+      ${html}
+    </div>`;
+
+  container.querySelectorAll('[data-task-id]').forEach(el => {
+    el.addEventListener('click', () => apriModaleTask(el.dataset.taskId));
+  });
+}
+
 function renderGantt() {
+  if (isMobileListView()) {
+    return renderGanttListView();
+  }
   const container = document.getElementById('gantt-container');
   if (!container) return;
 
@@ -1971,6 +2234,92 @@ function toggleCollassoEpica(epicaId) {
   renderGantt();
 }
 
+// ===== WEEK STRIP (sopra il Gantt) =====
+
+// Offset in giorni rispetto a oggi: 0 = settimana corrente, -7 = precedente, +7 = successiva
+let weekStripOffset = 0;
+let weekStripGiornoSelezionato = null; // ISO del giorno cliccato (per evidenziazione)
+
+const GIORNI_NOMI = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+
+function renderWeekStrip() {
+  const container = document.getElementById('week-strip-days');
+  if (!container) return;
+
+  const oggiISO = dataISOoggi();
+  const oggi = new Date(oggiISO);
+  // Lunedì della settimana attuale + offset
+  const giornoSett = oggi.getDay(); // 0=Dom..6=Sab
+  const lunOffset = giornoSett === 0 ? -6 : 1 - giornoSett;
+  const lunedi = new Date(oggi);
+  lunedi.setDate(oggi.getDate() + lunOffset + weekStripOffset);
+
+  const giorni = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(lunedi);
+    d.setDate(lunedi.getDate() + i);
+    giorni.push(d);
+  }
+
+  container.innerHTML = giorni.map(d => {
+    const iso = dataISO(d);
+    const isToday = iso === oggiISO;
+    const isSel = iso === weekStripGiornoSelezionato;
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    const cls = [
+      'week-day',
+      isToday && 'week-today',
+      isSel && 'week-selected',
+      weekend && 'week-weekend'
+    ].filter(Boolean).join(' ');
+    return `
+      <button type="button" class="${cls}" data-iso="${iso}">
+        <span class="week-day-name">${GIORNI_NOMI[d.getDay()]}</span>
+        <span class="week-day-num">${d.getDate()}</span>
+      </button>`;
+  }).join('');
+
+  container.querySelectorAll('.week-day').forEach(el => {
+    el.addEventListener('click', () => {
+      weekStripGiornoSelezionato = el.dataset.iso;
+      scrollGanttAlGiorno(el.dataset.iso);
+      renderWeekStrip(); // aggiorna evidenza "selected"
+    });
+  });
+}
+
+function scrollGanttAlGiorno(isoTarget) {
+  const container = document.getElementById('gantt-container');
+  if (!container) return;
+  const body = container.querySelector('.gantt-body');
+  if (!body) return;
+
+  // Calcola posizione X del giorno nel chart corrente
+  const range = calcolaRangeGantt(filtri.gantt);
+  if (!range) return;
+  if (isoTarget < range.min || isoTarget > range.max) {
+    // Il giorno è fuori dal range: imposta il filtro per includerlo
+    filtri.gantt.dataDa = isoTarget;
+    const fine = new Date(isoTarget);
+    fine.setDate(fine.getDate() + 14);
+    filtri.gantt.dataA = dataISO(fine);
+    popolaFiltri();
+    renderGantt();
+    setTimeout(() => scrollGanttAlGiorno(isoTarget), 50);
+    return;
+  }
+  const giorni = rangeDateISO(range.min, range.max);
+  const idx = giorni.indexOf(isoTarget);
+  if (idx === -1) return;
+  // dayW corrente (riprende il calcolo)
+  const dayW = calcolaDayWAdattivo('gantt-container', 240, giorni.length);
+  const xTarget = idx * dayW + dayW / 2;
+  const side = container.querySelector('.gantt-side');
+  const sideW = side ? side.offsetWidth : 0;
+  const visibile = container.clientWidth - sideW;
+  container.scrollLeft = xTarget - visibile / 2;
+}
+
 function scrollAOggi() {
   const container = document.getElementById('gantt-container');
   if (!container) return;
@@ -2011,6 +2360,9 @@ function calcolaCaricoPersone(ammessi = null) {
 // ===== WORKLOAD (timeline) =====
 
 function renderWorkload() {
+  if (isMobileListView()) {
+    return renderWorkloadListView();
+  }
   const container = document.getElementById('workload-container');
   if (!container) return;
 
@@ -2132,7 +2484,7 @@ function renderWorkload() {
     sideRowsArr.push(`
       <div class="wl-side-row" style="border-left: 3px solid ${escapeHtml(p.colore)}; height:${rowH}px"
            title="${escapeHtml(p.ruolo)} · FTE ${p.fte} · ${capacitaG}h/g · ${tasksPersona.length} task">
-        <strong>${escapeHtml(p.nome)}</strong>
+        <strong>${avatar(p, 'sm')} ${escapeHtml(p.nome)}</strong>
         <small>${escapeHtml(p.ruolo)} · ${capacitaG}h/g</small>
       </div>`);
 
@@ -2617,7 +2969,20 @@ function inizializza() {
   });
 
   // --- Vai a Oggi ---
-  document.getElementById('btn-vai-oggi').addEventListener('click', scrollAOggi);
+  document.getElementById('btn-vai-oggi').addEventListener('click', () => {
+    weekStripOffset = 0;
+    weekStripGiornoSelezionato = null;
+    renderWeekStrip();
+    scrollAOggi();
+  });
+
+  // --- Week strip nav prev/next ---
+  document.querySelectorAll('.week-nav').forEach(btn => {
+    btn.addEventListener('click', () => {
+      weekStripOffset += (btn.dataset.weekNav === 'next' ? 7 : -7);
+      renderWeekStrip();
+    });
+  });
 
   // --- Filtri (Gantt + Workload) ---
   document.querySelectorAll('.filter-bar').forEach(bar => {
@@ -2697,6 +3062,33 @@ function inizializza() {
     eliminaFerie(btn.dataset.id, Number(btn.dataset.i));
   });
 
+  // --- Kebab menu (header) ---
+  const kebabBtn = document.getElementById('btn-kebab');
+  const kebabDrop = document.getElementById('kebab-dropdown');
+  kebabBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    kebabDrop.classList.toggle('hidden');
+  });
+  document.addEventListener('click', e => {
+    if (!kebabDrop.contains(e.target) && e.target !== kebabBtn && !kebabBtn.contains(e.target)) {
+      kebabDrop.classList.add('hidden');
+    }
+  });
+
+  // --- Bottom bar (mobile) ---
+  document.getElementById('bb-btn-new').addEventListener('click', () => {
+    attivaTab('task');
+    // Setta tipo Task come default e scrolla in cima al form
+    document.querySelector('input[name="task-tipo"][value="task"]').checked = true;
+    document.getElementById('form-task').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('task-nome').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => document.getElementById('task-nome').focus(), 250);
+  });
+  document.getElementById('bb-btn-filtri').addEventListener('click', apriBottomSheetFiltri);
+  document.getElementById('bs-close').addEventListener('click', chiudiBottomSheet);
+  document.querySelector('#bottom-sheet-filtri .bs-backdrop')
+    .addEventListener('click', chiudiBottomSheet);
+
   // --- Import / Export ---
   document.getElementById('btn-esporta').addEventListener('click', esportaJSON);
   document.getElementById('input-importa').addEventListener('change', e => {
@@ -2710,6 +3102,8 @@ function inizializza() {
 
   // Primo render
   aggiornaViste();
+  renderWeekStrip();
+  aggiornaBadgeFiltri();
   // Scroll automatico a oggi all'apertura, se la tab attiva è il Gantt
   if (document.querySelector('.tab.active')?.dataset.tab === 'gantt') {
     setTimeout(scrollAOggi, 100);

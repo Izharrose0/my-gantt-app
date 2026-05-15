@@ -3,39 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#4f46e5">
+  <meta name="theme-color" content="#0c0e12">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Gantt App</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <header class="app-header">
-    <h1>📊 Gantt App</h1>
+    <h1 class="app-title">Gantt</h1>
     <div class="actions-top">
       <span id="sync-indicator" class="sync-indicator sync-loading" title="Stato sincronizzazione cloud">
         <span class="sync-dot"></span>
         <span class="sync-label">Collegamento…</span>
       </span>
-      <button class="btn btn-secondary" id="btn-esporta">Esporta JSON</button>
-      <label class="btn btn-secondary">
-        Importa JSON
-        <input type="file" id="input-importa" accept=".json" hidden>
-      </label>
+      <div class="kebab-menu">
+        <button class="btn btn-secondary btn-kebab" id="btn-kebab" type="button" aria-label="Menu" aria-haspopup="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </button>
+        <div class="kebab-dropdown hidden" id="kebab-dropdown">
+          <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
+          <label class="kebab-item">
+            Importa JSON
+            <input type="file" id="input-importa" accept=".json" hidden>
+          </label>
+        </div>
+      </div>
     </div>
   </header>
 
   <!-- TAB NAVIGATION -->
   <nav class="tabs">
-    <button class="tab active" data-tab="gantt">📊 Gantt</button>
-    <button class="tab" data-tab="workload">⏱️ Workload</button>
-    <button class="tab" data-tab="task">📋 Task</button>
-    <button class="tab" data-tab="calendario">📅 Calendario</button>
-    <button class="tab" data-tab="persone">👥 Persone</button>
+    <button class="tab active" data-tab="gantt">Gantt</button>
+    <button class="tab" data-tab="workload">Workload</button>
+    <button class="tab" data-tab="task">Task</button>
+    <button class="tab" data-tab="calendario">Calendario</button>
+    <button class="tab" data-tab="persone">Persone</button>
   </nav>
 
   <main>
@@ -69,13 +76,13 @@
         <h2>Aggiungi</h2>
         <div class="tipo-switch">
           <label class="tipo-opzione">
-            <input type="radio" name="task-tipo" value="task" checked> 📋 Task
+            <input type="radio" name="task-tipo" value="task" checked> Task
           </label>
           <label class="tipo-opzione">
-            <input type="radio" name="task-tipo" value="epica"> 📦 Epica
+            <input type="radio" name="task-tipo" value="epica"> Epica
           </label>
           <label class="tipo-opzione">
-            <input type="radio" name="task-tipo" value="milestone"> 🔶 Milestone
+            <input type="radio" name="task-tipo" value="milestone"> Milestone
           </label>
           <span class="hint" id="tipo-hint">Un task ha date, ore stimate, persone. Un'epica è solo un contenitore con un nome.</span>
         </div>
@@ -151,8 +158,8 @@
           <button class="btn btn-zoom active" data-view="Week">Settimana</button>
           <button class="btn btn-zoom" data-view="Month">Mese</button>
           <span class="controls-spacer"></span>
-          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi">📍 Vai a oggi</button>
-          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">📄 Esporta PDF</button>
+          <button class="btn btn-secondary btn-sm" id="btn-vai-oggi">Vai a oggi</button>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">Esporta PDF</button>
         </div>
 
         <div class="filter-bar" data-view-filter="gantt">
@@ -167,6 +174,12 @@
           <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
           <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
           <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
+        </div>
+
+        <div class="week-strip" id="week-strip">
+          <button type="button" class="week-nav" data-week-nav="prev" aria-label="Settimana precedente">‹</button>
+          <div class="week-strip-days" id="week-strip-days"></div>
+          <button type="button" class="week-nav" data-week-nav="next" aria-label="Settimana successiva">›</button>
         </div>
 
         <div class="legend-stati">
@@ -214,8 +227,8 @@
       <div class="card">
         <div class="gantt-controls">
           <h2 style="margin:0;flex:1">Workload</h2>
-          <button class="btn btn-secondary btn-sm" id="btn-report-settimana">📊 Report settimana</button>
-          <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">📄 Esporta PDF</button>
+          <button class="btn btn-secondary btn-sm" id="btn-report-settimana">Report settimana</button>
+          <button class="btn btn-secondary btn-sm" id="btn-stampa-workload">Esporta PDF</button>
         </div>
         <p class="hint">
           Ore/giorno = (ore stimate del task × % persona) / giorni lavorativi del task.
@@ -306,6 +319,36 @@
     </div>
   </div>
 
+  <!-- =================== BOTTOM BAR (mobile) =================== -->
+  <nav class="bottom-bar" id="bottom-bar" aria-label="Azioni rapide">
+    <button type="button" class="bb-btn" id="bb-btn-filtri" aria-label="Filtri">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/>
+      </svg>
+      <span>Filtri</span>
+      <span class="bb-badge hidden" id="bb-badge-filtri">0</span>
+    </button>
+    <button type="button" class="bb-fab" id="bb-btn-new" aria-label="Nuovo task">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    </button>
+  </nav>
+
+  <!-- =================== BOTTOM SHEET FILTRI (mobile) =================== -->
+  <div class="bottom-sheet hidden" id="bottom-sheet-filtri">
+    <div class="bs-backdrop"></div>
+    <div class="bs-panel">
+      <header class="bs-header">
+        <h3>Filtri rapidi</h3>
+        <button type="button" class="btn-close" id="bs-close" aria-label="Chiudi">×</button>
+      </header>
+      <div class="bs-body" id="bs-filtri-body">
+        <!-- Iniettato dinamicamente: persone, stato, epica, date, reset -->
+      </div>
+    </div>
+  </div>
+
   <!-- =================== MODAL MODIFICA PERSONA =================== -->
   <div id="modal-persona-overlay" class="modal-overlay hidden">
     <div class="modal">
@@ -363,8 +406,8 @@
           <input type="date" id="report-data-a">
         </label>
         <button type="button" class="btn btn-secondary btn-sm" id="btn-report-settimana-corr">Settimana corrente</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-csv">⬇ CSV</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-stampa">📄 PDF</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-csv">CSV</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-report-stampa">PDF</button>
       </div>
       <div id="report-body"></div>
     </div>
