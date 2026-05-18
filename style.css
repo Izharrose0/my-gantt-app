@@ -2275,6 +2275,103 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .filter-bar { display: none !important; }
 }
 
+/* ===== MOBILE LAYOUT (≤900px): timeline a tutto schermo =====
+   - Tabs spostate nel kebab
+   - Toolbar (G/S/M, Oggi, Filtri, PDF) spostata nella bottom bar
+   - Colonna laterale task nascosta: timeline occupa tutta la larghezza
+*/
+@media (max-width: 900px) {
+  .tabs { display: none !important; }
+  .card-gantt .toolbar { display: none !important; }
+  .card-gantt .week-strip { display: none !important; }
+  .card-gantt .gantt-side,
+  .card-gantt .wl-side { display: none !important; }
+  .card-gantt {
+    padding: 0.25rem !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  main { padding: 0.4rem 0.4rem 80px !important; }
+  #gantt-container,
+  #workload-wrap {
+    min-height: calc(100vh - 180px) !important;
+    max-height: calc(100vh - 140px) !important;
+  }
+  /* Nascondo i bottoni bottom-bar specifici della timeline se non siamo in Gantt/Workload */
+  body:not([data-active-tab="gantt"]):not([data-active-tab="workload"]) .bb-chart-only {
+    display: none !important;
+  }
+}
+
+/* Kebab nav items: visibili solo su mobile */
+.kebab-nav-section { display: none; }
+@media (max-width: 900px) {
+  .kebab-nav-section { display: contents; }
+  .kebab-dropdown { min-width: 200px; }
+}
+.kebab-nav.active {
+  background: var(--color-surface-3);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.kebab-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 0.35rem 0;
+}
+
+/* ===== Nuovi controlli nella bottom bar ===== */
+.bb-zoom {
+  display: inline-flex;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+.bb-zoom-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.55rem;
+  min-width: 28px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1;
+}
+.bb-zoom-btn.active {
+  background: var(--color-primary);
+  color: white;
+}
+.bb-btn-compact {
+  flex: 0 0 auto;
+  min-width: 48px;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.65rem;
+  gap: 1px;
+}
+.bb-btn-compact svg { width: 20px; height: 20px; }
+@media (max-width: 900px) {
+  .bottom-bar {
+    gap: 0.35rem;
+    padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom, 0px)) !important;
+    justify-content: space-between !important;
+  }
+  body { padding-bottom: 76px !important; }
+  .bb-btn-compact .bb-badge {
+    top: 0;
+    right: 4px;
+  }
+}
+@media (max-width: 360px) {
+  .bb-zoom-btn { padding: 0.3rem 0.4rem; min-width: 24px; }
+  .bb-btn-compact { min-width: 40px; font-size: 0.6rem; }
+}
+
 /* Nascondo la kebab dropdown quando non aperta */
 .hidden { display: none !important; }
 

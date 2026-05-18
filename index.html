@@ -26,6 +26,14 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
         </button>
         <div class="kebab-dropdown hidden" id="kebab-dropdown">
+          <div class="kebab-section kebab-nav-section">
+            <button type="button" class="kebab-item kebab-nav" data-nav="gantt">Gantt</button>
+            <button type="button" class="kebab-item kebab-nav" data-nav="workload">Workload</button>
+            <button type="button" class="kebab-item kebab-nav" data-nav="task">Task</button>
+            <button type="button" class="kebab-item kebab-nav" data-nav="calendario">Calendario</button>
+            <button type="button" class="kebab-item kebab-nav" data-nav="persone">Persone</button>
+            <div class="kebab-divider"></div>
+          </div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
           <label class="kebab-item">
             Importa JSON
@@ -330,12 +338,25 @@
 
   <!-- =================== BOTTOM BAR (mobile) =================== -->
   <nav class="bottom-bar" id="bottom-bar" aria-label="Azioni rapide">
-    <button type="button" class="bb-btn" id="bb-btn-filtri" aria-label="Filtri">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <div class="bb-zoom bb-chart-only" role="group" aria-label="Zoom timeline">
+      <button type="button" class="bb-zoom-btn" data-view="Day" data-bb-zoom>G</button>
+      <button type="button" class="bb-zoom-btn" data-view="Week" data-bb-zoom>S</button>
+      <button type="button" class="bb-zoom-btn active" data-view="Month" data-bb-zoom>M</button>
+    </div>
+    <button type="button" class="bb-btn bb-btn-compact bb-chart-only" id="bb-btn-oggi" aria-label="Vai a oggi">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="14"/></svg>
+      <span>Oggi</span>
+    </button>
+    <button type="button" class="bb-btn bb-btn-compact bb-chart-only" id="bb-btn-filtri" aria-label="Filtri">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/>
       </svg>
       <span>Filtri</span>
       <span class="bb-badge hidden" id="bb-badge-filtri">0</span>
+    </button>
+    <button type="button" class="bb-btn bb-btn-compact bb-chart-only" id="bb-btn-pdf" aria-label="Esporta PDF">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>PDF</span>
     </button>
     <button type="button" class="bb-fab" id="bb-btn-new" aria-label="Nuovo task">
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

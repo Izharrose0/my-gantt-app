@@ -1014,6 +1014,12 @@ function attivaTab(nome) {
     t.classList.toggle('active', t.dataset.tab === nome));
   document.querySelectorAll('.tab-content').forEach(c =>
     c.classList.toggle('active', c.id === `tab-${nome}`));
+  // Stato kebab-nav (mobile)
+  document.querySelectorAll('.kebab-nav').forEach(b =>
+    b.classList.toggle('active', b.dataset.nav === nome));
+  document.body.setAttribute('data-active-tab', nome);
+  // Chiudi il kebab se aperto
+  document.getElementById('kebab-dropdown')?.classList.add('hidden');
   // Quando entro nelle tab grafiche, ri-renderizzo per avere dimensioni corrette
   if (nome === 'gantt') {
     renderGantt();
@@ -2276,8 +2282,8 @@ function disegnaFrecceDipendenze(dayW, minDate) {
 
 function cambiaViewMode(vm) {
   viewModeCorrente = vm;
-  // Aggiorna evidenza pillgroup sia nel Gantt che nel Workload
-  document.querySelectorAll('.toolbar [data-view]').forEach(b =>
+  // Aggiorna evidenza pillgroup sia nel Gantt che nel Workload e nella bottom-bar mobile
+  document.querySelectorAll('[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === vm));
   renderGantt();
   renderWorkload();
@@ -3141,8 +3147,8 @@ function inizializza() {
     scrollWorkloadAOggi();
   });
 
-  // --- Zoom: listener su tutti gli zoom buttons (Gantt + Workload condividono lo stesso viewModeCorrente) ---
-  document.querySelectorAll('.toolbar [data-view]').forEach(b => {
+  // --- Zoom: listener su tutti gli zoom buttons (toolbar desktop + bottom-bar mobile) ---
+  document.querySelectorAll('[data-view]').forEach(b => {
     b.addEventListener('click', () => cambiaViewMode(b.dataset.view));
   });
 
@@ -3256,6 +3262,23 @@ function inizializza() {
     setTimeout(() => document.getElementById('task-nome').focus(), 250);
   });
   document.getElementById('bb-btn-filtri').addEventListener('click', apriBottomSheetFiltri);
+  document.getElementById('bb-btn-oggi').addEventListener('click', () => {
+    const v = vistaAttiva();
+    if (v === 'workload') {
+      document.getElementById('btn-vai-oggi-wl')?.click();
+    } else {
+      attivaTab('gantt');
+      scrollAOggi();
+    }
+  });
+  document.getElementById('bb-btn-pdf').addEventListener('click', () => {
+    const v = vistaAttiva();
+    stampaVista(v === 'workload' ? 'workload' : 'gantt');
+  });
+  // Kebab nav (mobile): navigazione tab dentro l'hamburger
+  document.querySelectorAll('.kebab-nav').forEach(btn => {
+    btn.addEventListener('click', () => attivaTab(btn.dataset.nav));
+  });
   document.getElementById('bs-close').addEventListener('click', chiudiBottomSheet);
   document.querySelector('#bottom-sheet-filtri .bs-backdrop')
     .addEventListener('click', chiudiBottomSheet);
@@ -3270,6 +3293,17 @@ function inizializza() {
   // Prima inizializzazione dei form (stato vuoto)
   renderAssegnazioni('lista-assegnazioni-nuovo', tempAssegnazioniNuovo);
   renderDipendenze('lista-dipendenze-nuovo', tempDipendenzeNuovo, null);
+
+  // Default Month view su mobile: timeline più leggibile a colpo d'occhio
+  if (window.matchMedia('(max-width: 900px)').matches) {
+    cambiaViewMode('Month');
+  }
+
+  // Stato iniziale data-active-tab (per CSS bottom-bar)
+  const tabIniziale = document.querySelector('.tab.active')?.dataset.tab || 'gantt';
+  document.body.setAttribute('data-active-tab', tabIniziale);
+  document.querySelectorAll('.kebab-nav').forEach(b =>
+    b.classList.toggle('active', b.dataset.nav === tabIniziale));
 
   // Primo render
   aggiornaViste();
