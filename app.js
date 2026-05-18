@@ -659,10 +659,11 @@ function migraStato(dati) {
   // Festività (può essere vuoto)
   if (!Array.isArray(dati.festivita)) dati.festivita = [];
 
-  // Ferie per persona
+  // Ferie + costo orario per persona
   dati.persone = dati.persone.map(p => ({
     ...p,
-    ferie: Array.isArray(p.ferie) ? p.ferie.slice() : []
+    ferie: Array.isArray(p.ferie) ? p.ferie.slice() : [],
+    costoOrario: Number.isFinite(Number(p.costoOrario)) ? Number(p.costoOrario) : 0
   }));
 
   return dati;
@@ -708,6 +709,24 @@ function oreGiornaliereAssegnazione(t, assegnazione) {
   if (!ggLav) return 0;
   const orePersona = stima * (Number(assegnazione.effort) || 0) / 100;
   return orePersona / ggLav;
+}
+
+// Costo del task in euro: Σ (stimaOre × effort% × costoOrario persona)
+function costoTask(t) {
+  const stima = Number(t.stimaOre) || 0;
+  if (!stima || !Array.isArray(t.assegnazioni)) return 0;
+  return t.assegnazioni.reduce((sum, a) => {
+    const p = stato.persone.find(x => x.id === a.personaId);
+    const tariffa = p ? Number(p.costoOrario) || 0 : 0;
+    const ore = stima * (Number(a.effort) || 0) / 100;
+    return sum + ore * tariffa;
+  }, 0);
+}
+
+// Formattazione monetaria in euro, senza decimali (es. "€ 1.250")
+function formatEuro(n) {
+  const v = Math.round(Number(n) || 0);
+  return '€ ' + v.toLocaleString('it-IT');
 }
 
 // ===== EPICHE / SOTTO-TASK =====
@@ -762,7 +781,7 @@ function aggregaEpica(t) {
 
   if (!foglie.length) {
     return { inizio: t.inizio, fine: t.fine, stimaOre: 0, oreAllocate: 0,
-             stato: 'todo', completamento: 0 };
+             stato: 'todo', completamento: 0, costoTotale: 0 };
   }
 
   const inizio = foglie.map(f => f.inizio).filter(Boolean).sort()[0];
@@ -770,6 +789,7 @@ function aggregaEpica(t) {
   // Solo i task contribuiscono alle ore (le milestone hanno 0)
   const stimaOre = foglie.reduce((s, f) => s + (Number(f.stimaOre) || 0), 0);
   const oreAllocate = foglie.reduce((s, f) => s + effortAllocato(f), 0);
+  const costoTotale = foglie.reduce((s, f) => s + costoTask(f), 0);
 
   // Stato derivato
   const stati = foglie.map(f => f.stato);
@@ -791,7 +811,7 @@ function aggregaEpica(t) {
     );
   }
 
-  return { inizio, fine, stimaOre, oreAllocate, stato: statoEpica, completamento };
+  return { inizio, fine, stimaOre, oreAllocate, stato: statoEpica, completamento, costoTotale };
 }
 
 // Restituisce true se `potenzialeAvo` è antenato di `taskId`, per evitare cicli
@@ -1078,6 +1098,7 @@ function renderPersone() {
           <strong>${escapeHtml(p.nome)}</strong>
           <span>${escapeHtml(p.ruolo)}</span>
           <span class="label-fte">FTE ${escapeHtml(p.fte)}</span>
+          ${Number(p.costoOrario) > 0 ? `<span class="label-fte" title="Costo orario">${formatEuro(p.costoOrario)}/h</span>` : ''}
         </div>
         <div class="azioni-lista">
           <button class="btn btn-edit btn-sm" data-action="modifica-persona" data-id="${p.id}">Modifica</button>
@@ -1096,6 +1117,7 @@ function apriModaleModificaPersona(id) {
   document.getElementById('edit-persona-ruolo').value  = p.ruolo;
   document.getElementById('edit-persona-fte').value    = p.fte;
   document.getElementById('edit-persona-colore').value = p.colore;
+  document.getElementById('edit-persona-costo').value  = Number(p.costoOrario) || 0;
   document.getElementById('modal-persona-overlay').classList.remove('hidden');
 }
 
@@ -1104,23 +1126,25 @@ function chiudiModaleModificaPersona() {
   document.getElementById('modal-persona-overlay').classList.add('hidden');
 }
 
-function salvaModificaPersona(nome, ruolo, fte, colore) {
+function salvaModificaPersona(nome, ruolo, fte, colore, costoOrario) {
   const p = trovaPersona(personaInModifica);
   if (!p) return;
   p.nome = nome;
   p.ruolo = ruolo;
   p.fte = fte;
   p.colore = colore;
+  p.costoOrario = Math.max(0, Number(costoOrario) || 0);
   salvaStato();
   chiudiModaleModificaPersona();
   aggiornaViste();
 }
 
-function aggiungiPersona(nome, ruolo, fte) {
+function aggiungiPersona(nome, ruolo, fte, costoOrario) {
   stato.persone.push({
     id: generaId(),
     nome, ruolo, fte,
-    colore: colorePerIndice(stato.persone.length)
+    colore: colorePerIndice(stato.persone.length),
+    costoOrario: Math.max(0, Number(costoOrario) || 0)
   });
   salvaStato();
   aggiornaViste();
@@ -1478,19 +1502,25 @@ function renderTaskHTML(tasks, livello = 0) {
     ].filter(Boolean).join(' ');
 
     let datiMeta;
+    const costoRiga = isEpica ? (agg.costoTotale || 0) : costoTask(t);
+    const costoBadge = costoRiga > 0
+      ? `<span class="label-fte" title="Costo stimato">${formatEuro(costoRiga)}</span>`
+      : '';
     if (isEpica) {
       datiMeta = figli.length
         ? `<span>${formatDataBreve(inizioMostrato)} → ${formatDataBreve(fineMostrata)}</span>
            <span class="label-fte" title="Σ figli">⏱ ${stima}h</span>
            <span class="label-fte" title="Giorni · Ore-uomo">${gg}gg · ${allocate}h</span>
-           <span class="label-fte epica-badge" title="Completamento">${agg.completamento}%</span>`
+           <span class="label-fte epica-badge" title="Completamento">${agg.completamento}%</span>
+           ${costoBadge}`
         : '<em style="color:#94a3b8">vuota — trascina qui dei task</em>';
     } else if (isMilestone) {
       datiMeta = `<span>Data: ${formatDataBreve(t.inizio)}</span>`;
     } else {
       datiMeta = `<span>${formatDataBreve(inizioMostrato)} → ${formatDataBreve(fineMostrata)}</span>
          <span class="label-fte" title="Stima manuale">⏱ ${stima}h</span>
-         <span class="label-fte" title="Giorni · Ore-uomo">${gg}gg · ${allocate}h</span>`;
+         <span class="label-fte" title="Giorni · Ore-uomo">${gg}gg · ${allocate}h</span>
+         ${costoBadge}`;
     }
 
     const chevron = isEpica
@@ -2054,9 +2084,11 @@ function renderGantt() {
       .join(' · ');
     const stima = isEpica ? agg.stimaOre : (t.stimaOre || 0);
     const completamento = isEpica ? agg.completamento : null;
+    const costoEur = isEpica ? agg.costoTotale : costoTask(t);
 
     const tooltip = `${t.nome}\n${formatDataBreve(inizio)} → ${formatDataBreve(fine)}` +
       (stima ? `\nStima: ${stima}h` : '') +
+      (costoEur > 0 ? `\nCosto: ${formatEuro(costoEur)}` : '') +
       (sublabel ? `\n${sublabel}` : '') +
       (isEpica ? `\n[EPICA · ${completamento}% completato]` : '');
 
@@ -2075,9 +2107,11 @@ function renderGantt() {
       : (t.stato === 'in-progress' || t.stato === 'done') && pctTask !== null
         ? ` · ${pctTask}%`
         : '';
+    // Costo sull'etichetta: solo per epiche larghe (>120px) per non sporcare le barre piccole
+    const costoSuffix = isEpica && costoEur > 0 && width > 120 ? ` · ${formatEuro(costoEur)}` : '';
     const etichettaHTML = `
       <span class="gantt-bar-label">
-        <span class="gantt-bar-title">${escapeHtml(t.nome)}${pctSuffix}</span>
+        <span class="gantt-bar-title">${escapeHtml(t.nome)}${pctSuffix}${costoSuffix}</span>
         ${showSublabel ? `<span class="gantt-bar-sublabel">${escapeHtml(sublabel)}</span>` : ''}
       </span>`;
 
@@ -2969,8 +3003,9 @@ function inizializza() {
     const ruolo  = document.getElementById('edit-persona-ruolo').value.trim();
     const fte    = parseFloat(document.getElementById('edit-persona-fte').value);
     const colore = document.getElementById('edit-persona-colore').value;
+    const costo  = parseFloat(document.getElementById('edit-persona-costo').value) || 0;
     if (!nome || !ruolo || isNaN(fte)) return;
-    salvaModificaPersona(nome, ruolo, fte, colore);
+    salvaModificaPersona(nome, ruolo, fte, colore, costo);
   });
   const listaTask = document.getElementById('lista-task');
   listaTask.addEventListener('click', e => {
@@ -3030,10 +3065,12 @@ function inizializza() {
     const nome  = document.getElementById('persona-nome').value.trim();
     const ruolo = document.getElementById('persona-ruolo').value.trim();
     const fte   = parseFloat(document.getElementById('persona-fte').value);
+    const costo = parseFloat(document.getElementById('persona-costo').value) || 0;
     if (!nome || !ruolo || isNaN(fte)) return;
-    aggiungiPersona(nome, ruolo, fte);
+    aggiungiPersona(nome, ruolo, fte, costo);
     e.target.reset();
     document.getElementById('persona-fte').value = '1.0';
+    document.getElementById('persona-costo').value = '0';
   });
 
   // --- Form Task / Epica (nuovo) ---
