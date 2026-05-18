@@ -545,7 +545,9 @@
       getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
     import {
-      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
+      getAuth, GoogleAuthProvider,
+      signInWithPopup, signInWithRedirect, getRedirectResult,
+      signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -571,7 +573,9 @@
     // Esposto a app.js (non-module) tramite window
     window.__firebase = {
       db, doc, onSnapshot, setDoc,
-      auth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+      auth, GoogleAuthProvider,
+      signInWithPopup, signInWithRedirect, getRedirectResult,
+      signOut, onAuthStateChanged
     };
     window.dispatchEvent(new Event('firebase-ready'));
   </script>

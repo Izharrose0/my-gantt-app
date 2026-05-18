@@ -54,12 +54,37 @@ function inizializzaAuth() {
     aggiornaUIPermessi();
   });
 
+  // Se torniamo da un signInWithRedirect, processa il risultato
+  fb.getRedirectResult(fb.auth).catch(e => {
+    if (e?.code && e.code !== 'auth/no-auth-event') {
+      console.warn('Errore getRedirectResult:', e);
+    }
+  });
+
   document.getElementById('btn-login-google')?.addEventListener('click', async () => {
+    const provider = new fb.GoogleAuthProvider();
+    // Prova prima il popup. Se il browser lo blocca (COOP / popup blocker /
+    // browser in-app come iOS Safari), fallback automatico al redirect.
     try {
-      const provider = new fb.GoogleAuthProvider();
       await fb.signInWithPopup(fb.auth, provider);
     } catch (e) {
-      alert('Login fallito: ' + (e.message || e.code || e));
+      const codiciDaRedirect = new Set([
+        'auth/popup-blocked',
+        'auth/popup-closed-by-user',
+        'auth/cancelled-popup-request',
+        'auth/operation-not-supported-in-this-environment',
+        'auth/web-storage-unsupported',
+        'auth/internal-error'
+      ]);
+      if (codiciDaRedirect.has(e?.code)) {
+        try {
+          await fb.signInWithRedirect(fb.auth, provider);
+        } catch (e2) {
+          alert('Login fallito: ' + (e2.message || e2.code || e2));
+        }
+      } else {
+        alert('Login fallito: ' + (e.message || e.code || e));
+      }
     }
   });
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
