@@ -5,6 +5,68 @@ let stato = {
   task: []       // [{ id, nome, inizio, fine, assegnazioni: [{personaId, effort}], stato }]
 };
 
+// ===== AUTH / OWNER =====
+// Email dell'unico utente autorizzato a modificare. Chi non e' loggato con
+// questa email puo' solo visualizzare (Firestore rules + gating UI).
+const OWNER_EMAIL = 'i.coletti@invrsion.com';
+let utenteCorrente = null; // firebase User | null
+
+function isOwner() {
+  return utenteCorrente?.email === OWNER_EMAIL;
+}
+
+// Aggiorna la UI in base al ruolo (owner vs viewer): badge, voci kebab,
+// classi sul body. Le regole CSS in style.css fanno il vero hiding.
+function aggiornaUIPermessi() {
+  const role = isOwner() ? 'owner' : 'viewer';
+  document.body.setAttribute('data-role', role);
+  const badge = document.getElementById('role-badge');
+  if (badge) {
+    badge.classList.toggle('role-owner', role === 'owner');
+    badge.classList.toggle('role-viewer', role === 'viewer');
+    const label = badge.querySelector('.role-label');
+    if (label) label.textContent = role === 'owner' ? 'OWNER' : 'VIEW ONLY';
+    badge.title = role === 'owner'
+      ? `Loggato come ${utenteCorrente.email} — puoi modificare`
+      : 'Sola lettura — solo l\'owner può modificare';
+  }
+  const logoutLabel = document.getElementById('logout-label');
+  if (logoutLabel && utenteCorrente) {
+    logoutLabel.textContent = `Esci (${utenteCorrente.email.split('@')[0]})`;
+  }
+  // Nascondi le righe del modale-task editing per i viewer
+  const formModifica = document.getElementById('form-modifica-task');
+  if (formModifica) {
+    const submit = formModifica.querySelector('button[type="submit"]');
+    if (submit) submit.style.display = role === 'owner' ? '' : 'none';
+  }
+}
+
+// Sottoscrive lo stato di auth e attiva i bottoni login/logout
+function inizializzaAuth() {
+  const fb = window.__firebase;
+  if (!fb || !fb.auth) {
+    aggiornaUIPermessi();
+    return;
+  }
+  fb.onAuthStateChanged(fb.auth, user => {
+    utenteCorrente = user;
+    aggiornaUIPermessi();
+  });
+
+  document.getElementById('btn-login-google')?.addEventListener('click', async () => {
+    try {
+      const provider = new fb.GoogleAuthProvider();
+      await fb.signInWithPopup(fb.auth, provider);
+    } catch (e) {
+      alert('Login fallito: ' + (e.message || e.code || e));
+    }
+  });
+  document.getElementById('btn-logout')?.addEventListener('click', async () => {
+    try { await fb.signOut(fb.auth); } catch (e) {}
+  });
+}
+
 // ID del task in modifica nel modal
 let taskInModifica = null;
 
@@ -565,6 +627,13 @@ function salvaStato() {
   // Se Firebase non è disponibile, resta in modalità locale
   if (!window.__firebase) return;
 
+  // Difensivo: i viewer non possono scrivere su Firestore. Le rules server-side
+  // bloccano comunque la write; qui evitiamo anche solo di tentare.
+  if (!isOwner()) {
+    console.warn('Skip Firestore write: utente non owner.');
+    return;
+  }
+
   impostaSyncStato('saving');
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
@@ -591,12 +660,16 @@ function caricaStato() {
     } catch {}
   }
 
-  // 2) Sottoscrivi Firestore (o quando il bridge è pronto)
+  // 2) Sottoscrivi Firestore + Auth (o quando il bridge è pronto)
   if (window.__firebase) {
     avviaSyncFirestore();
+    inizializzaAuth();
   } else {
     impostaSyncStato('loading');
-    window.addEventListener('firebase-ready', avviaSyncFirestore, { once: true });
+    window.addEventListener('firebase-ready', () => {
+      avviaSyncFirestore();
+      inizializzaAuth();
+    }, { once: true });
     // Timeout: se Firebase non si carica entro 5s, resta in modalità locale
     setTimeout(() => {
       if (!window.__firebase) impostaSyncStato('offline');

@@ -12,11 +12,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-role="viewer">
 
   <header class="app-header">
     <h1 class="app-title">MY-GANTT</h1>
     <div class="actions-top">
+      <span id="role-badge" class="role-badge role-viewer" title="Sola lettura — solo l'owner può modificare">
+        <span class="role-dot"></span>
+        <span class="role-label">VIEW ONLY</span>
+      </span>
       <span id="sync-indicator" class="sync-indicator sync-loading" title="Stato sincronizzazione cloud">
         <span class="sync-dot"></span>
         <span class="sync-label">Collegamento…</span>
@@ -36,10 +40,15 @@
             <div class="kebab-divider"></div>
           </div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
-          <label class="kebab-item">
+          <label class="kebab-item only-owner">
             Importa JSON
             <input type="file" id="input-importa" accept=".json" hidden>
           </label>
+          <div class="kebab-divider"></div>
+          <button type="button" class="kebab-item only-viewer" id="btn-login-google">Accedi come owner (Google)</button>
+          <button type="button" class="kebab-item only-owner hidden" id="btn-logout">
+            <span id="logout-label">Esci</span>
+          </button>
         </div>
       </div>
     </div>
@@ -535,6 +544,9 @@
     import {
       getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
+    } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBLgoM5sz57pzuGDbOzsmGPlJLZHQA6YLw",
@@ -547,6 +559,9 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+    // Mantieni la sessione anche dopo refresh/chiusura tab
+    try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
 
     // Persistenza offline: i dati restano disponibili anche senza connessione
     try {
@@ -554,7 +569,10 @@
     } catch (e) { /* persistenza non disponibile in questa tab */ }
 
     // Esposto a app.js (non-module) tramite window
-    window.__firebase = { db, doc, onSnapshot, setDoc };
+    window.__firebase = {
+      db, doc, onSnapshot, setDoc,
+      auth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    };
     window.dispatchEvent(new Event('firebase-ready'));
   </script>
   <script src="app.js"></script>

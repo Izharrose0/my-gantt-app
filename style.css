@@ -2973,6 +2973,69 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 /* =====================================================================
+   ===== AUTH / OWNER vs VIEWER ========================================
+   ===================================================================== */
+
+/* Badge ruolo nell'header */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  cursor: default;
+}
+.role-badge .role-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.role-viewer { color: #94a3b8; }
+.role-owner  { color: #10b981; }
+
+/* Visibilità basata sul ruolo (controllata via body[data-role]) */
+.only-owner  { /* default: visibile */ }
+.only-viewer { /* default: visibile */ }
+body[data-role="viewer"] .only-owner  { display: none !important; }
+body[data-role="owner"]  .only-viewer { display: none !important; }
+
+/* Viewer: nascondi tutti i controlli di scrittura */
+body[data-role="viewer"] {
+  /* Tab che servono solo a creare/modificare */
+}
+body[data-role="viewer"] #tab-task .card:first-child,
+body[data-role="viewer"] #tab-persone .card:first-child,
+body[data-role="viewer"] #tab-calendario form,
+body[data-role="viewer"] #tab-calendario #btn-aggiungi-italia,
+body[data-role="viewer"] #form-ferie-template { display: none !important; }
+body[data-role="viewer"] .azioni-lista,
+body[data-role="viewer"] [data-action="elimina-persona"],
+body[data-role="viewer"] [data-action="modifica-persona"],
+body[data-role="viewer"] [data-action="elimina-task"],
+body[data-role="viewer"] [data-action="modifica-task"],
+body[data-role="viewer"] [data-action="elimina-ferie"],
+body[data-role="viewer"] [data-action="elimina-festivita"] { display: none !important; }
+/* FAB nuovo task + drag handles + chevron riordino: viewer non li vede */
+body[data-role="viewer"] #bb-btn-new,
+body[data-role="viewer"] .gantt-bar-handle,
+body[data-role="viewer"] .drag-handle { display: none !important; }
+body[data-role="viewer"] .gantt-bar,
+body[data-role="viewer"] .gantt-milestone { cursor: pointer !important; }
+body[data-role="viewer"] .gantt-side-row { cursor: default !important; }
+/* Submit del modal modifica task viene gestito via JS */
+
+/* Hint testuale "VIEW ONLY" in cima alla pagina (sottile) */
+body[data-role="viewer"]::before {
+  content: '';
+}
+
+/* =====================================================================
    ===== MOBILE OVERRIDES (FINALI, devono vincere su tutto) ============
    ===================================================================== */
 @media (max-width: 900px) {
