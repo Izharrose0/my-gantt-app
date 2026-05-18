@@ -2898,9 +2898,28 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   white-space: nowrap;
 }
 .eisen-card-epica .eisen-card-name { font-style: italic; }
-.eisen-card.stato-done { opacity: 0.5; }
-.eisen-card.stato-blocked { border-left: 3px solid #ef4444; }
-.eisen-card.stato-in-progress { border-left: 3px solid #8b5cf6; }
+/* Colore card per stato (coerente con Gantt bars) */
+.eisen-card.stato-todo {
+  border-left: 4px solid #64748b;
+  background: rgba(100, 116, 139, 0.12);
+}
+.eisen-card.stato-in-progress {
+  border-left: 4px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.15);
+}
+.eisen-card.stato-done {
+  border-left: 4px solid #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  opacity: 0.75;
+}
+.eisen-card.stato-blocked {
+  border-left: 4px solid #ef4444;
+  background: rgba(239, 68, 68, 0.18);
+}
+.eisen-card.stato-done .eisen-card-name {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255,255,255,0.4);
+}
 .eisen-card .avatar-group { flex-shrink: 0; }
 
 .eisen-legend {

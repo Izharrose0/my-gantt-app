@@ -2990,6 +2990,8 @@ function renderEisenhower() {
     const imp = clampEisen(t.importanza, 3);
     const urg = clampEisen(t.urgenza, 3);
     const isEpica = t.tipo === 'epica';
+    // Stato visualizzato: per le epiche derivato da aggregaEpica, per i task il proprio
+    const statoVis = isEpica ? (aggregaEpica(t).stato || 'todo') : (t.stato || 'todo');
     const persone = isEpica
       ? raccogliAssegnatariEpica(t)
       : (t.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
@@ -2998,9 +3000,9 @@ function renderEisenhower() {
       ? `<span class="avatar avatar-xs" style="background:#64748b">+${persone.length - 3}</span>`
       : '';
     return `
-      <div class="eisen-card stato-${t.stato || 'todo'}${isEpica ? ' eisen-card-epica' : ''}"
+      <div class="eisen-card stato-${statoVis}${isEpica ? ' eisen-card-epica' : ''}"
            data-id="${t.id}"
-           title="${escapeHtml(t.nome)} · Importanza ${imp} · Urgenza ${urg}">
+           title="${escapeHtml(t.nome)} · ${statoVis} · Importanza ${imp} · Urgenza ${urg}">
         <span class="eisen-card-name">${escapeHtml(t.nome)}</span>
         ${avatars || extra ? `<span class="avatar-group">${avatars}${extra}</span>` : ''}
       </div>`;
