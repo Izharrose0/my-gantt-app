@@ -66,18 +66,31 @@ const JIRA_FIELDS = [
   'summary', 'status', 'issuetype', 'parent', 'assignee',
   'duedate', 'created', 'timetracking', 'priority', 'labels',
   startDateField
-].join(',');
+];
 
-async function jiraGet(path) {
+async function jiraRequest(path, { method = 'GET', body } = {}) {
   const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
-  const resp = await fetch(`https://${JIRA_DOMAIN}${path}`, {
-    headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' }
-  });
+  const init = {
+    method,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json'
+    }
+  };
+  if (body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const resp = await fetch(`https://${JIRA_DOMAIN}${path}`, init);
   if (resp.status === 401 || resp.status === 403) {
     abort('Credenziali Jira non valide o permessi insufficienti (' + resp.status + ').');
   }
   if (resp.status === 404) {
     abort('Endpoint Jira non trovato (404): controlla domain e project key.');
+  }
+  if (resp.status === 410) {
+    const text = await resp.text().catch(() => '');
+    abort(`Jira API 410 Gone: ${text.slice(0, 300)}`);
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
@@ -86,22 +99,30 @@ async function jiraGet(path) {
   return resp.json();
 }
 
+// Usa il nuovo endpoint /rest/api/3/search/jql (l'API legacy /search è
+// stata rimossa da Atlassian — CHANGE-2046). Paginazione a cursore con
+// nextPageToken invece di startAt/total.
 async function fetchAllIssues() {
   const PAGE_SIZE = 100;
-  const jql = encodeURIComponent(`project = "${projectKey}" ORDER BY created ASC`);
-  let startAt = 0;
-  let total = Infinity;
+  const jql = `project = "${projectKey}" ORDER BY created ASC`;
+  let nextPageToken = undefined;
+  let pageNum = 0;
   const out = [];
-  while (startAt < total) {
-    const page = await jiraGet(
-      `/rest/api/3/search?jql=${jql}&fields=${JIRA_FIELDS}&maxResults=${PAGE_SIZE}&startAt=${startAt}`
-    );
-    total = Number(page.total) || 0;
+  while (true) {
+    const body = {
+      jql,
+      fields: JIRA_FIELDS,
+      maxResults: PAGE_SIZE
+    };
+    if (nextPageToken) body.nextPageToken = nextPageToken;
+
+    const page = await jiraRequest('/rest/api/3/search/jql', { method: 'POST', body });
     const arr = page.issues || [];
     out.push(...arr);
-    console.log(`  pagina startAt=${startAt}: +${arr.length} (totale Jira: ${total})`);
-    startAt += arr.length;
-    if (arr.length === 0) break;
+    pageNum++;
+    console.log(`  pagina ${pageNum}: +${arr.length} (cumulato: ${out.length})`);
+    nextPageToken = page.nextPageToken || null;
+    if (page.isLast || !nextPageToken || arr.length === 0) break;
   }
   return out;
 }
