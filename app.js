@@ -27,10 +27,10 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
   const disponibile = cont.clientWidth - effectiveSide - 4;
   if (disponibile <= 0) return baseDayW;
   const fitWidth = Math.floor(disponibile / giorniLen);
-  // Su mobile in Month view: ENTRA tutta la timeline nel viewport (anche
-  // restringendo i giorni sotto il minimo), così niente scroll orizzontale
-  // e l'utente vede l'intero arco temporale a colpo d'occhio.
-  if (w <= 900 && viewModeCorrente === 'Month') {
+  // Su mobile: ENTRA tutta la timeline nel viewport (anche restringendo i
+  // giorni sotto il minimo della view mode). Niente scroll orizzontale e
+  // l'utente vede l'intero arco temporale a colpo d'occhio.
+  if (w <= 900) {
     return Math.max(2, fitWidth);
   }
   return Math.max(baseDayW, fitWidth);
@@ -2212,12 +2212,10 @@ function abilitaDragGantt(dayW, minDate) {
   body.querySelectorAll('.gantt-bar').forEach(bar => {
     // Le epiche hanno date derivate dai figli: non draggable
     if (bar.dataset.readonly) {
-      bar.addEventListener('click', () => {
-        // Su smartphone il tap sull'epica fa solo toggle (gestito altrove):
-        // non aprire la modale di modifica
-        if (window.innerWidth <= 900 && bar.classList.contains('gantt-bar-epica')) return;
-        apriModaleTask(bar.dataset.id);
-      });
+      // Su smartphone le barre epica usano SOLO il toggle (registrato in
+      // renderGantt). Niente listener qui per non aprire la modale.
+      if (window.innerWidth <= 900 && bar.classList.contains('gantt-bar-epica')) return;
+      bar.addEventListener('click', () => apriModaleTask(bar.dataset.id));
       return;
     }
     bar.addEventListener('mousedown', e => {
