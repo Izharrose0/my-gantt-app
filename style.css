@@ -2790,14 +2790,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
    ===== MATRICE DI EISENHOWER =========================================
    ===================================================================== */
 
-/* Piano cartesiano Eisenhower 5x5 */
+/* Piano cartesiano Eisenhower 4x4 */
 #eisen-container {
   display: grid;
   grid-template-areas:
-    ".          axis-title-x ."
-    "axis-title-y plane         ."
-    ".          legend        .";
-  grid-template-columns: 26px 1fr;
+    ".            axis-title-x"
+    "axis-title-y plane"
+    ".            legend";
+  grid-template-columns: 110px 1fr;
   gap: 0.4rem;
   padding: 0.5rem 0.25rem;
 }
@@ -2811,21 +2811,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .eisen-axis-title-x {
   grid-area: axis-title-x;
-  text-align: center;
-  padding-bottom: 0.2rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.5rem 0.3rem 2.4rem; /* offset per allinearsi alla griglia (skip corner+ y-label) */
 }
 .eisen-axis-title-y {
   grid-area: axis-title-y;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  text-align: center;
-  align-self: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 1.8rem 0.4rem 0.4rem 0;
 }
 
 .eisen-plane {
   grid-area: plane;
   display: grid;
-  grid-template-columns: 26px repeat(5, 1fr);
+  grid-template-columns: 26px repeat(4, 1fr);
   grid-auto-rows: minmax(110px, 1fr);
   gap: 4px;
   background: var(--color-surface-3);
@@ -2930,18 +2932,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* Mobile: piano più compatto, scroll orizzontale se serve */
 @media (max-width: 900px) {
   #eisen-container {
-    grid-template-columns: 20px 1fr;
+    grid-template-columns: 78px 1fr;
     gap: 0.3rem;
     padding: 0.25rem 0.1rem;
   }
+  .eisen-axis-title { font-size: 0.6rem; letter-spacing: 0.3px; }
+  .eisen-axis-title-x { padding: 0 0.2rem 0.2rem 1.8rem; }
+  .eisen-axis-title-y { padding: 1.2rem 0.3rem 0.3rem 0; }
   .eisen-plane {
-    grid-template-columns: 20px repeat(5, minmax(60px, 1fr));
+    grid-template-columns: 18px repeat(4, minmax(60px, 1fr));
     grid-auto-rows: minmax(70px, auto);
     gap: 2px;
     padding: 2px;
   }
-  .eisen-axis-y { width: 20px; }
-  .eisen-axis-label { font-size: 0.65rem; }
+  .eisen-axis-y { width: 18px; }
+  .eisen-axis-label { font-size: 0.62rem; }
   .eisen-cell { min-height: 70px; padding: 2px; }
   .eisen-card { font-size: 0.62rem; padding: 2px 4px; }
   .eisen-card .avatar-xs { width: 14px; height: 14px; font-size: 0.5rem; }

@@ -648,8 +648,9 @@ function migraStato(dati) {
       parentId: t.parentId || null,
       tipo: ['epica', 'milestone'].includes(t.tipo) ? t.tipo : 'task',
       ordine: Number.isFinite(t.ordine) ? t.ordine : null,
-      urgenza:    Number.isFinite(urg) && urg >= 1 && urg <= 5 ? urg : 3,
-      importanza: Number.isFinite(imp) && imp >= 1 && imp <= 5 ? imp : 3
+      // Scala 1-4: i vecchi valori 5 vengono compressi a 4
+      urgenza:    Number.isFinite(urg) && urg >= 1 ? Math.min(4, urg) : 3,
+      importanza: Number.isFinite(imp) && imp >= 1 ? Math.min(4, imp) : 3
     };
   });
 
@@ -1592,11 +1593,16 @@ function clampCompletamento(val, stato) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-// Normalizza un valore di importanza/urgenza in [1,5]
+// Normalizza un valore di importanza/urgenza in [1,4].
+// Storicamente la scala era 1-5: i valori 5 vengono compressi a 4.
 function clampEisen(val, fallback) {
   const n = Math.round(Number(val));
-  if (!Number.isFinite(n)) return Number(fallback) || 3;
-  return Math.max(1, Math.min(5, n));
+  if (!Number.isFinite(n)) {
+    const f = Math.round(Number(fallback));
+    if (!Number.isFinite(f)) return 3;
+    return Math.max(1, Math.min(4, f));
+  }
+  return Math.max(1, Math.min(4, n));
 }
 
 // Restituisce l'ordine "in fondo" tra i fratelli con lo stesso parent
@@ -2968,11 +2974,11 @@ function renderEisenhower() {
   });
 
   // Raggruppa per coordinate (urgenza, importanza)
-  // grid[imp][urg] = [task,...] con imp ∈ 1..5, urg ∈ 1..5
+  // grid[imp][urg] = [task,...] con imp ∈ 1..4, urg ∈ 1..4
   const grid = {};
-  for (let imp = 1; imp <= 5; imp++) {
+  for (let imp = 1; imp <= 4; imp++) {
     grid[imp] = {};
-    for (let urg = 1; urg <= 5; urg++) grid[imp][urg] = [];
+    for (let urg = 1; urg <= 4; urg++) grid[imp][urg] = [];
   }
   elenco.forEach(t => {
     const imp = clampEisen(t.importanza, 3);
@@ -3000,7 +3006,6 @@ function renderEisenhower() {
       </div>`;
   };
 
-  // Etichette dei valori (5 a sinistra in alto, 1 in basso)
   const cellHTML = (imp, urg) => {
     const tasks = grid[imp][urg];
     const impAlto = imp >= 3;
@@ -3017,24 +3022,33 @@ function renderEisenhower() {
       </div>`;
   };
 
-  // Header colonne (urgenza in alto, 1→5 da sinistra a destra)
-  let headerUrg = '<div class="eisen-axis-corner"></div>';
-  for (let urg = 1; urg <= 5; urg++) {
-    headerUrg += `<div class="eisen-axis-label eisen-axis-x">${urg}</div>`;
-  }
-
-  // Righe: importanza dall'alto (5) verso il basso (1)
+  // Header X: "Urgente" a sinistra (col urg=4), "Non urgente" a destra (col urg=1)
+  // Header Y: "Importante" in alto (riga imp=4), "Non importante" in basso (riga imp=1)
+  // Righe: importanza 4 → 1 dall'alto al basso
+  // Colonne: urgenza 4 → 1 da sinistra a destra (INVERSO rispetto a prima)
   let righe = '';
-  for (let imp = 5; imp >= 1; imp--) {
+  for (let imp = 4; imp >= 1; imp--) {
     righe += `<div class="eisen-axis-label eisen-axis-y">${imp}</div>`;
-    for (let urg = 1; urg <= 5; urg++) {
+    for (let urg = 4; urg >= 1; urg--) {
       righe += cellHTML(imp, urg);
     }
   }
 
+  // Header colonne: numerici 4..1
+  let headerUrg = '<div class="eisen-axis-corner"></div>';
+  for (let urg = 4; urg >= 1; urg--) {
+    headerUrg += `<div class="eisen-axis-label eisen-axis-x">${urg}</div>`;
+  }
+
   container.innerHTML = `
-    <div class="eisen-axis-title eisen-axis-title-y">Importanza ↑</div>
-    <div class="eisen-axis-title eisen-axis-title-x">Urgenza →</div>
+    <div class="eisen-axis-title eisen-axis-title-x">
+      <span>Urgente</span>
+      <span>Non urgente</span>
+    </div>
+    <div class="eisen-axis-title eisen-axis-title-y">
+      <span>Importante</span>
+      <span>Non importante</span>
+    </div>
     <div class="eisen-plane">
       ${headerUrg}
       ${righe}
