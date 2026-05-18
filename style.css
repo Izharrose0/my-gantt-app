@@ -2828,7 +2828,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   grid-area: plane;
   display: grid;
   grid-template-columns: 26px repeat(4, 1fr);
-  grid-auto-rows: minmax(110px, 1fr);
+  /* prima riga = header colonne (auto), poi 4 righe della matrice */
+  grid-template-rows: auto repeat(4, minmax(110px, 1fr));
   gap: 4px;
   background: var(--color-surface-3);
   padding: 4px;
@@ -2960,7 +2961,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .eisen-axis-title-y { padding: 1.2rem 0.3rem 0.3rem 0; }
   .eisen-plane {
     grid-template-columns: 18px repeat(4, minmax(60px, 1fr));
-    grid-auto-rows: minmax(70px, auto);
+    grid-template-rows: auto repeat(4, minmax(70px, auto));
     gap: 2px;
     padding: 2px;
   }
