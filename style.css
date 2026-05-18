@@ -2784,3 +2784,34 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .gantt-arcs path { stroke-width: 1 !important; }
 }
 
+/* =====================================================================
+   ===== MOBILE OVERRIDES (FINALI, devono vincere su tutto) ============
+   ===================================================================== */
+@media (max-width: 900px) {
+  .card.card-gantt {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  main { padding: 0 !important; padding-bottom: 80px !important; }
+  #gantt-container,
+  #workload-wrap {
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .gantt-timeline { border: 0 !important; }
+  /* Tap su epica nel Gantt: anche senza side column, chevron disponibile */
+  .gantt-epica-tap {
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    z-index: 5;
+    cursor: pointer;
+    background: transparent;
+  }
+}
+

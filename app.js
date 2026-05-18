@@ -27,6 +27,12 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
   const disponibile = cont.clientWidth - effectiveSide - 4;
   if (disponibile <= 0) return baseDayW;
   const fitWidth = Math.floor(disponibile / giorniLen);
+  // Su mobile in Month view: ENTRA tutta la timeline nel viewport (anche
+  // restringendo i giorni sotto il minimo), così niente scroll orizzontale
+  // e l'utente vede l'intero arco temporale a colpo d'occhio.
+  if (w <= 900 && viewModeCorrente === 'Month') {
+    return Math.max(2, fitWidth);
+  }
   return Math.max(baseDayW, fitWidth);
 }
 
@@ -709,11 +715,24 @@ function eMilestone(taskId) {
   return t?.tipo === 'milestone';
 }
 
-// % di completamento di un singolo task in base allo stato
-function percCompletamento(stato) {
-  if (stato === 'done') return 100;
-  if (stato === 'in-progress') return 50;
-  return 0; // todo, blocked
+// % di completamento di un singolo task in base allo stato.
+// Per i task in-progress si usa il valore custom `completamento` se presente,
+// altrimenti 50% come fallback. Done = 100, todo/blocked = 0.
+function percCompletamento(taskOrStato) {
+  // Backward-compat: accetta sia una stringa di stato che il task intero
+  if (typeof taskOrStato === 'string') {
+    if (taskOrStato === 'done') return 100;
+    if (taskOrStato === 'in-progress') return 50;
+    return 0;
+  }
+  const t = taskOrStato || {};
+  if (t.stato === 'done') return 100;
+  if (t.stato === 'in-progress') {
+    const v = Number(t.completamento);
+    if (Number.isFinite(v)) return Math.max(0, Math.min(100, v));
+    return 50;
+  }
+  return 0;
 }
 
 // Aggrega ricorsivamente i dati di un'epica dai suoi discendenti foglia
@@ -753,11 +772,11 @@ function aggregaEpica(t) {
   const sommaStima = foglie.reduce((s, f) => s + (Number(f.stimaOre) || 0), 0);
   if (sommaStima > 0) {
     completamento = Math.round(
-      foglie.reduce((s, f) => s + percCompletamento(f.stato) * (Number(f.stimaOre) || 0), 0) / sommaStima
+      foglie.reduce((s, f) => s + percCompletamento(f) * (Number(f.stimaOre) || 0), 0) / sommaStima
     );
   } else {
     completamento = Math.round(
-      foglie.reduce((s, f) => s + percCompletamento(f.stato), 0) / foglie.length
+      foglie.reduce((s, f) => s + percCompletamento(f), 0) / foglie.length
     );
   }
 
@@ -1493,12 +1512,13 @@ function renderTaskHTML(tasks, livello = 0) {
   }).join('');
 }
 
-function aggiungiTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre, dipendenze, parentId) {
+function aggiungiTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre, dipendenze, parentId, completamento) {
   stato.task.push({
     id: generaId(),
     nome, inizio, fine,
     stato: statoTask,
     stimaOre: Number(stimaOre) || 0,
+    completamento: clampCompletamento(completamento, statoTask),
     assegnazioni: assegnazioni.filter(a => a.personaId).map(a => ({ ...a })),
     dipendenze: (dipendenze || []).slice(),
     parentId: parentId || null,
@@ -1507,6 +1527,15 @@ function aggiungiTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre, dip
   });
   salvaStato();
   aggiornaViste();
+}
+
+// Normalizza il completamento in [0,100] e auto-imposta in base allo stato
+function clampCompletamento(val, stato) {
+  if (stato === 'done') return 100;
+  if (stato === 'todo' || stato === 'blocked') return 0;
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 // Restituisce l'ordine "in fondo" tra i fratelli con lo stesso parent
@@ -1626,6 +1655,7 @@ function apriModaleTask(id) {
     document.getElementById('edit-fine').value   = t.fine || '';
     document.getElementById('edit-stato').value  = t.stato || 'todo';
     document.getElementById('edit-stima').value  = Number(t.stimaOre) || 0;
+    document.getElementById('edit-completamento').value = Number.isFinite(Number(t.completamento)) ? Number(t.completamento) : (t.stato === 'done' ? 100 : 0);
 
     tempAssegnazioniEdit = (t.assegnazioni || []).map(a => ({ ...a }));
     renderAssegnazioni('lista-assegnazioni-edit', tempAssegnazioniEdit);
@@ -1675,6 +1705,9 @@ function salvaModificaTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre
   t.fine   = fine;
   t.stato  = statoTask;
   t.stimaOre = Number(stimaOre) || 0;
+  // Completamento: letto dal form (sovrascritto da clamp in base allo stato)
+  const compInput = document.getElementById('edit-completamento');
+  t.completamento = clampCompletamento(compInput ? compInput.value : t.completamento, statoTask);
   t.assegnazioni = assegnazioni.filter(a => a.personaId).map(a => ({ ...a }));
   t.dipendenze = (dipendenze || []).filter(d => d !== t.id);
   // Validazione ciclo: non posso essere figlio di un mio discendente
@@ -2024,15 +2057,23 @@ function renderGantt() {
 
     // Sublabel: persone visibili sui task larghi e sulle epiche collassate
     const showSublabel = sublabel && width > 80 && (!isEpica || collassata);
+    // % nel titolo: per le epiche sempre, per i task in-progress il valore custom
+    const pctTask = !isEpica && t.tipo === 'task' ? percCompletamento(t) : null;
+    const pctSuffix = isEpica
+      ? ` · ${completamento}%`
+      : (t.stato === 'in-progress' || t.stato === 'done') && pctTask !== null
+        ? ` · ${pctTask}%`
+        : '';
     const etichettaHTML = `
       <span class="gantt-bar-label">
-        <span class="gantt-bar-title">${escapeHtml(t.nome)}${isEpica ? ` · ${completamento}%` : ''}</span>
+        <span class="gantt-bar-title">${escapeHtml(t.nome)}${pctSuffix}</span>
         ${showSublabel ? `<span class="gantt-bar-sublabel">${escapeHtml(sublabel)}</span>` : ''}
       </span>`;
 
-    // Barra di progresso per epiche
-    const progressHTML = isEpica && completamento > 0
-      ? `<div class="gantt-bar-progress" style="width:${completamento}%"></div>`
+    // Barra di progresso: per epiche (% aggregata) e per task in-progress (% custom)
+    const pctBarra = isEpica ? completamento : (pctTask || 0);
+    const progressHTML = pctBarra > 0
+      ? `<div class="gantt-bar-progress" style="width:${pctBarra}%"></div>`
       : '';
 
     return `
@@ -2086,6 +2127,16 @@ function renderGantt() {
         return;
       }
       apriModaleTask(el.dataset.id);
+    });
+  });
+
+  // Mobile: tap su barra epica nel body → toggle espansione/collasso
+  // (la side column è nascosta su smartphone, quindi serve un'azione qui)
+  container.querySelectorAll('.gantt-bar-epica').forEach(bar => {
+    bar.addEventListener('click', ev => {
+      if (window.innerWidth > 900) return;
+      ev.stopPropagation();
+      toggleCollassoEpica(bar.dataset.id);
     });
   });
 
@@ -3013,6 +3064,7 @@ function inizializza() {
     const fine      = document.getElementById('task-fine').value;
     const statoTask = document.getElementById('task-stato').value;
     const stimaOre  = parseFloat(document.getElementById('task-stima').value) || 0;
+    const completamento = parseFloat(document.getElementById('task-completamento').value) || 0;
     const parentId  = document.getElementById('task-parent').value || null;
 
     if (!inizio || !fine) { alert('Inserisci data inizio e fine.'); return; }
@@ -3022,10 +3074,11 @@ function inizializza() {
     }
     if (!validaSommaEffort(tempAssegnazioniNuovo)) return;
 
-    aggiungiTask(nome, inizio, fine, statoTask, tempAssegnazioniNuovo, stimaOre, tempDipendenzeNuovo, parentId);
+    aggiungiTask(nome, inizio, fine, statoTask, tempAssegnazioniNuovo, stimaOre, tempDipendenzeNuovo, parentId, completamento);
 
     e.target.reset();
     document.getElementById('task-stima').value = '0';
+    document.getElementById('task-completamento').value = '0';
     tempAssegnazioniNuovo = [];
     tempDipendenzeNuovo = [];
     renderAssegnazioni('lista-assegnazioni-nuovo', tempAssegnazioniNuovo);
