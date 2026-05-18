@@ -304,9 +304,11 @@
     <section class="tab-content" id="tab-eisenhower">
       <div class="card card-gantt">
         <div class="toolbar eisen-toolbar">
-          <label class="form-inline" style="gap:0.4rem; align-items:center;">
-            <input type="checkbox" id="eisen-mostra-epiche"> Mostra epiche
-          </label>
+          <div class="toolbar-group eisen-mode-switch" role="group" aria-label="Mostra">
+            <button type="button" class="btn btn-zoom active" data-eisen-mode="epiche">Epiche</button>
+            <button type="button" class="btn btn-zoom" data-eisen-mode="task">Task</button>
+            <button type="button" class="btn btn-zoom" data-eisen-mode="tutti">Tutti</button>
+          </div>
           <span class="toolbar-spacer"></span>
           <button type="button" class="btn btn-secondary btn-sm btn-filtri-toggle" data-view-toggle="eisenhower">
             Filtri

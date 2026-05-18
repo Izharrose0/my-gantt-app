@@ -57,8 +57,8 @@ let filtri = {
   eisenhower: { persone: [], stati: [], epica: '', dataDa: '', dataA: '' }
 };
 
-// Toggle locale (non persistito): mostra epiche nella matrice di Eisenhower
-let eisenMostraEpiche = false;
+// Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
+let eisenModo = 'epiche';
 
 // Range di date di default: primo giorno del mese precedente
 // → ultimo giorno del mese successivo (rispetto a oggi)
@@ -2958,11 +2958,13 @@ function renderEisenhower() {
   if (!container) return;
 
   const ammessi = taskAmmessi(filtri.eisenhower);
+  // Filtra in base alla modalità selezionata (epiche / task / tutti)
   let elenco = stato.task.filter(t => {
     if (!ammessi.has(t.id)) return false;
     if (t.tipo === 'milestone') return false;
-    if (t.tipo === 'epica') return eisenMostraEpiche;
-    return true;
+    if (eisenModo === 'epiche') return t.tipo === 'epica';
+    if (eisenModo === 'task')   return t.tipo === 'task';
+    return t.tipo === 'epica' || t.tipo === 'task';
   });
 
   // Raggruppa per coordinate (urgenza, importanza)
@@ -3562,10 +3564,14 @@ function inizializza() {
     btn.addEventListener('click', () => attivaTab(btn.dataset.nav));
   });
 
-  // Eisenhower: toggle "mostra epiche"
-  document.getElementById('eisen-mostra-epiche')?.addEventListener('change', e => {
-    eisenMostraEpiche = e.target.checked;
-    renderEisenhower();
+  // Eisenhower: switch modalità (epiche / task / tutti)
+  document.querySelectorAll('[data-eisen-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      eisenModo = btn.dataset.eisenMode;
+      document.querySelectorAll('[data-eisen-mode]').forEach(b =>
+        b.classList.toggle('active', b.dataset.eisenMode === eisenModo));
+      renderEisenhower();
+    });
   });
   document.getElementById('bs-close').addEventListener('click', chiudiBottomSheet);
   document.querySelector('#bottom-sheet-filtri .bs-backdrop')
