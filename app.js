@@ -56,6 +56,17 @@ let filtri = {
   workload: { persone: [], stati: [], epica: '', dataDa: '', dataA: '' }
 };
 
+// Range di date di default: primo giorno del mese precedente
+// → ultimo giorno del mese successivo (rispetto a oggi)
+function rangeFiltroDefault() {
+  const oggi = new Date();
+  const inizio = new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1);
+  const fine   = new Date(oggi.getFullYear(), oggi.getMonth() + 2, 0); // giorno 0 del mese+2 = ultimo giorno del mese+1
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { dataDa: fmt(inizio), dataA: fmt(fine) };
+}
+
 function rerenderVista(vista) {
   if (vista === 'gantt') renderGantt();
   else if (vista === 'workload') renderWorkload();
@@ -2201,7 +2212,12 @@ function abilitaDragGantt(dayW, minDate) {
   body.querySelectorAll('.gantt-bar').forEach(bar => {
     // Le epiche hanno date derivate dai figli: non draggable
     if (bar.dataset.readonly) {
-      bar.addEventListener('click', () => apriModaleTask(bar.dataset.id));
+      bar.addEventListener('click', () => {
+        // Su smartphone il tap sull'epica fa solo toggle (gestito altrove):
+        // non aprire la modale di modifica
+        if (window.innerWidth <= 900 && bar.classList.contains('gantt-bar-epica')) return;
+        apriModaleTask(bar.dataset.id);
+      });
       return;
     }
     bar.addEventListener('mousedown', e => {
@@ -2912,6 +2928,17 @@ function importaJSON(file) {
 function inizializza() {
   caricaStato();
 
+  // Default date range filter: mese precedente -> mese successivo
+  const def = rangeFiltroDefault();
+  if (!filtri.gantt.dataDa && !filtri.gantt.dataA) {
+    filtri.gantt.dataDa = def.dataDa;
+    filtri.gantt.dataA  = def.dataA;
+  }
+  if (!filtri.workload.dataDa && !filtri.workload.dataA) {
+    filtri.workload.dataDa = def.dataDa;
+    filtri.workload.dataA  = def.dataA;
+  }
+
   // --- Tabs ---
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => attivaTab(t.dataset.tab));
@@ -3243,8 +3270,9 @@ function inizializza() {
       filtri[vista].persone = [];
       filtri[vista].stati   = [];
       filtri[vista].epica   = '';
-      filtri[vista].dataDa  = '';
-      filtri[vista].dataA   = '';
+      const def = rangeFiltroDefault();
+      filtri[vista].dataDa  = def.dataDa;
+      filtri[vista].dataA   = def.dataA;
       popolaFiltri();
       rerenderVista(vista);
     });
