@@ -29,6 +29,7 @@
           <div class="kebab-section kebab-nav-section">
             <button type="button" class="kebab-item kebab-nav" data-nav="gantt">Gantt</button>
             <button type="button" class="kebab-item kebab-nav" data-nav="workload">Workload</button>
+            <button type="button" class="kebab-item kebab-nav" data-nav="eisenhower">Eisenhower</button>
             <button type="button" class="kebab-item kebab-nav" data-nav="task">Task</button>
             <button type="button" class="kebab-item kebab-nav" data-nav="calendario">Calendario</button>
             <button type="button" class="kebab-item kebab-nav" data-nav="persone">Persone</button>
@@ -48,6 +49,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="gantt">Gantt</button>
     <button class="tab" data-tab="workload">Workload</button>
+    <button class="tab" data-tab="eisenhower">Eisenhower</button>
     <button class="tab" data-tab="task">Task</button>
     <button class="tab" data-tab="calendario">Calendario</button>
     <button class="tab" data-tab="persone">Persone</button>
@@ -132,6 +134,26 @@
             <label class="solo-task">
               Completamento %
               <input type="number" id="task-completamento" min="0" max="100" step="5" value="0">
+            </label>
+            <label class="no-epica">
+              Importanza (1-5)
+              <select id="task-importanza">
+                <option value="1">1 — Marginale</option>
+                <option value="2">2 — Bassa</option>
+                <option value="3" selected>3 — Media</option>
+                <option value="4">4 — Alta</option>
+                <option value="5">5 — Critica</option>
+              </select>
+            </label>
+            <label class="no-epica">
+              Urgenza (1-5)
+              <select id="task-urgenza">
+                <option value="1">1 — Nessuna</option>
+                <option value="2">2 — Bassa</option>
+                <option value="3" selected>3 — Media</option>
+                <option value="4">4 — Alta</option>
+                <option value="5">5 — Immediata</option>
+              </select>
             </label>
             <label class="no-epica">
               Sotto-task di (epica)
@@ -278,6 +300,36 @@
       </div>
     </section>
 
+    <!-- =================== TAB EISENHOWER =================== -->
+    <section class="tab-content" id="tab-eisenhower">
+      <div class="card card-gantt">
+        <div class="toolbar eisen-toolbar">
+          <label class="form-inline" style="gap:0.4rem; align-items:center;">
+            <input type="checkbox" id="eisen-mostra-epiche"> Mostra epiche
+          </label>
+          <span class="toolbar-spacer"></span>
+          <button type="button" class="btn btn-secondary btn-sm btn-filtri-toggle" data-view-toggle="eisenhower">
+            Filtri
+            <span class="filtri-badge hidden">0</span>
+          </button>
+        </div>
+
+        <div class="filter-bar collapsed" data-view-filter="eisenhower">
+          <label class="filter-item">Persone <select class="filter-persone" multiple size="1"></select></label>
+          <label class="filter-item">Stato <select class="filter-stato" multiple size="1">
+            <option value="todo">To Do</option>
+            <option value="in-progress">In Progress</option>
+            <option value="done">Done</option>
+            <option value="blocked">Blocked</option>
+          </select></label>
+          <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
+          <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
+        </div>
+
+        <div id="eisen-container" class="eisen-grid"></div>
+      </div>
+    </section>
+
   </main>
 
   <!-- =================== MODAL MODIFICA TASK =================== -->
@@ -321,6 +373,26 @@
           <label class="solo-task">
             Completamento %
             <input type="number" id="edit-completamento" min="0" max="100" step="5" value="0">
+          </label>
+          <label class="no-epica">
+            Importanza (1-5)
+            <select id="edit-importanza">
+              <option value="1">1 — Marginale</option>
+              <option value="2">2 — Bassa</option>
+              <option value="3">3 — Media</option>
+              <option value="4">4 — Alta</option>
+              <option value="5">5 — Critica</option>
+            </select>
+          </label>
+          <label class="no-epica">
+            Urgenza (1-5)
+            <select id="edit-urgenza">
+              <option value="1">1 — Nessuna</option>
+              <option value="2">2 — Bassa</option>
+              <option value="3">3 — Media</option>
+              <option value="4">4 — Alta</option>
+              <option value="5">5 — Immediata</option>
+            </select>
           </label>
           <label class="no-epica">
             Sotto-task di (epica)

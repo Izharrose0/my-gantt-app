@@ -52,9 +52,13 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (transienti, indipendenti per vista)
 let filtri = {
-  gantt:    { persone: [], stati: [], epica: '', dataDa: '', dataA: '' },
-  workload: { persone: [], stati: [], epica: '', dataDa: '', dataA: '' }
+  gantt:      { persone: [], stati: [], epica: '', dataDa: '', dataA: '' },
+  workload:   { persone: [], stati: [], epica: '', dataDa: '', dataA: '' },
+  eisenhower: { persone: [], stati: [], epica: '', dataDa: '', dataA: '' }
 };
+
+// Toggle locale (non persistito): mostra epiche nella matrice di Eisenhower
+let eisenMostraEpiche = false;
 
 // Range di date di default: primo giorno del mese precedente
 // → ultimo giorno del mese successivo (rispetto a oggi)
@@ -70,6 +74,7 @@ function rangeFiltroDefault() {
 function rerenderVista(vista) {
   if (vista === 'gantt') renderGantt();
   else if (vista === 'workload') renderWorkload();
+  else if (vista === 'eisenhower') renderEisenhower();
 }
 
 // Apre il dialog di stampa del browser (l'utente può salvare come PDF)
@@ -631,15 +636,20 @@ function migraStato(dati) {
       };
     }
     // Nuovo formato (assicurati che i campi esistano)
+    const urg = Number(t.urgenza);
+    const imp = Number(t.importanza);
     return {
       id: t.id, nome: t.nome, inizio: t.inizio, fine: t.fine,
       assegnazioni: t.assegnazioni || [],
       stato: t.stato || 'todo',
       stimaOre: Number(t.stimaOre) || 0,
+      completamento: Number.isFinite(Number(t.completamento)) ? Number(t.completamento) : 0,
       dipendenze: Array.isArray(t.dipendenze) ? t.dipendenze.slice() : [],
       parentId: t.parentId || null,
       tipo: ['epica', 'milestone'].includes(t.tipo) ? t.tipo : 'task',
-      ordine: Number.isFinite(t.ordine) ? t.ordine : null
+      ordine: Number.isFinite(t.ordine) ? t.ordine : null,
+      urgenza:    Number.isFinite(urg) && urg >= 1 && urg <= 5 ? urg : 3,
+      importanza: Number.isFinite(imp) && imp >= 1 && imp <= 5 ? imp : 3
     };
   });
 
@@ -1082,6 +1092,7 @@ function attivaTab(nome) {
     renderWeekStrip();
     setTimeout(scrollWorkloadAOggi, 80);
   }
+  if (nome === 'eisenhower') renderEisenhower();
   if (nome === 'calendario') renderCalendario();
   aggiornaBadgeFiltri();
 }
@@ -1553,13 +1564,15 @@ function renderTaskHTML(tasks, livello = 0) {
   }).join('');
 }
 
-function aggiungiTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre, dipendenze, parentId, completamento) {
+function aggiungiTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre, dipendenze, parentId, completamento, importanza, urgenza) {
   stato.task.push({
     id: generaId(),
     nome, inizio, fine,
     stato: statoTask,
     stimaOre: Number(stimaOre) || 0,
     completamento: clampCompletamento(completamento, statoTask),
+    importanza: clampEisen(importanza, 3),
+    urgenza:    clampEisen(urgenza, 3),
     assegnazioni: assegnazioni.filter(a => a.personaId).map(a => ({ ...a })),
     dipendenze: (dipendenze || []).slice(),
     parentId: parentId || null,
@@ -1577,6 +1590,13 @@ function clampCompletamento(val, stato) {
   const n = Number(val);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+// Normalizza un valore di importanza/urgenza in [1,5]
+function clampEisen(val, fallback) {
+  const n = Math.round(Number(val));
+  if (!Number.isFinite(n)) return Number(fallback) || 3;
+  return Math.max(1, Math.min(5, n));
 }
 
 // Restituisce l'ordine "in fondo" tra i fratelli con lo stesso parent
@@ -1697,6 +1717,8 @@ function apriModaleTask(id) {
     document.getElementById('edit-stato').value  = t.stato || 'todo';
     document.getElementById('edit-stima').value  = Number(t.stimaOre) || 0;
     document.getElementById('edit-completamento').value = Number.isFinite(Number(t.completamento)) ? Number(t.completamento) : (t.stato === 'done' ? 100 : 0);
+    document.getElementById('edit-importanza').value = Number(t.importanza) || 3;
+    document.getElementById('edit-urgenza').value    = Number(t.urgenza)    || 3;
 
     tempAssegnazioniEdit = (t.assegnazioni || []).map(a => ({ ...a }));
     renderAssegnazioni('lista-assegnazioni-edit', tempAssegnazioniEdit);
@@ -1749,6 +1771,11 @@ function salvaModificaTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre
   // Completamento: letto dal form (sovrascritto da clamp in base allo stato)
   const compInput = document.getElementById('edit-completamento');
   t.completamento = clampCompletamento(compInput ? compInput.value : t.completamento, statoTask);
+  // Eisenhower: importanza / urgenza (1-5)
+  const impEl = document.getElementById('edit-importanza');
+  const urgEl = document.getElementById('edit-urgenza');
+  t.importanza = clampEisen(impEl?.value, t.importanza);
+  t.urgenza    = clampEisen(urgEl?.value, t.urgenza);
   t.assegnazioni = assegnazioni.filter(a => a.personaId).map(a => ({ ...a }));
   t.dipendenze = (dipendenze || []).filter(d => d !== t.id);
   // Validazione ciclo: non posso essere figlio di un mio discendente
@@ -2047,9 +2074,8 @@ function renderGantt() {
           <div class="gantt-milestone stato-${statoVis}"
                style="left:${cx - 9}px"
                data-id="${t.id}"
-               title="${escapeHtml(tooltip)}">
-            <span class="gantt-milestone-label">${escapeHtml(t.nome)}</span>
-          </div>
+               title="${escapeHtml(tooltip)}"></div>
+          <span class="gantt-milestone-label" style="left:${cx + 14}px" title="${escapeHtml(tooltip)}">${escapeHtml(t.nome)}</span>
         </div>`;
     }
 
@@ -2909,6 +2935,106 @@ function chiudiModaleGiorno() {
   document.getElementById('modal-giorno-overlay').classList.add('hidden');
 }
 
+// ===== MATRICE DI EISENHOWER =====
+
+// Quadrante di un task in base a importanza/urgenza (soglia >= 3 = alto)
+function quadranteEisen(t) {
+  const imp = Number(t.importanza) || 3;
+  const urg = Number(t.urgenza)    || 3;
+  const impAlto = imp >= 3;
+  const urgAlto = urg >= 3;
+  if (impAlto && urgAlto) return 'do';        // I: Importante & Urgente → Fai subito
+  if (impAlto && !urgAlto) return 'plan';      // II: Importante, non urgente → Pianifica
+  if (!impAlto && urgAlto) return 'delegate';  // III: Urgente, non importante → Delega
+  return 'drop';                               // IV: Né urgente né importante → Elimina
+}
+
+function renderEisenhower() {
+  const container = document.getElementById('eisen-container');
+  if (!container) return;
+
+  const ammessi = taskAmmessi(filtri.eisenhower);
+  let elenco = stato.task.filter(t => {
+    if (!ammessi.has(t.id)) return false;
+    if (t.tipo === 'milestone') return false;
+    if (t.tipo === 'epica') return eisenMostraEpiche;
+    return true;
+  });
+
+  // Raggruppa per quadrante e ordina per (imp+urg) desc, poi nome
+  const quadranti = { do: [], plan: [], delegate: [], drop: [] };
+  elenco.forEach(t => {
+    quadranti[quadranteEisen(t)].push(t);
+  });
+  Object.keys(quadranti).forEach(k => {
+    quadranti[k].sort((a, b) => {
+      const sa = (Number(a.importanza) || 3) + (Number(a.urgenza) || 3);
+      const sb = (Number(b.importanza) || 3) + (Number(b.urgenza) || 3);
+      if (sa !== sb) return sb - sa;
+      return (a.nome || '').localeCompare(b.nome || '');
+    });
+  });
+
+  const META = {
+    do:       { titolo: 'I — Fai subito',  hint: 'Importante & Urgente' },
+    plan:     { titolo: 'II — Pianifica',  hint: 'Importante, non urgente' },
+    delegate: { titolo: 'III — Delega',    hint: 'Urgente, non importante' },
+    drop:     { titolo: 'IV — Elimina',    hint: 'Né urgente né importante' }
+  };
+
+  const cardHTML = t => {
+    const imp = Number(t.importanza) || 3;
+    const urg = Number(t.urgenza)    || 3;
+    const isEpica = t.tipo === 'epica';
+    const agg = isEpica ? aggregaEpica(t) : null;
+    const pct = isEpica ? agg.completamento : percCompletamento(t);
+    const stima = isEpica ? (agg.stimaOre || 0) : (Number(t.stimaOre) || 0);
+    const persone = isEpica ? [] : (t.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
+    const avatars = persone.slice(0, 4).map(p => avatar(p, 'xs')).join('');
+    const extra = persone.length > 4 ? `<span class="avatar avatar-xs" style="background:#64748b">+${persone.length - 4}</span>` : '';
+    const epicaParent = !isEpica && t.parentId ? stato.task.find(x => x.id === t.parentId) : null;
+    const breadcrumb = epicaParent ? `<span class="eisen-card-epica">${escapeHtml(epicaParent.nome)}</span>` : '';
+    return `
+      <div class="eisen-card stato-${t.stato || 'todo'}" data-id="${t.id}" title="Importanza ${imp} · Urgenza ${urg}">
+        ${isEpica ? '<span class="label-fte epica-badge">EPICA</span>' : ''}
+        <div class="eisen-card-name">${escapeHtml(t.nome)}</div>
+        ${breadcrumb}
+        <div class="eisen-card-meta">
+          <span class="eisen-score" title="Importanza">Imp ${imp}</span>
+          <span class="eisen-score" title="Urgenza">Urg ${urg}</span>
+          ${stima > 0 ? `<span class="label-fte">⏱ ${stima}h</span>` : ''}
+          ${pct > 0 ? `<span class="label-fte">${pct}%</span>` : ''}
+        </div>
+        ${avatars || extra ? `<div class="avatar-group">${avatars}${extra}</div>` : ''}
+      </div>`;
+  };
+
+  const quadranteHTML = (key) => `
+    <div class="eisen-quadrante eisen-${key}">
+      <div class="eisen-quadrante-header">
+        <strong>${META[key].titolo}</strong>
+        <span class="hint">${META[key].hint} · ${quadranti[key].length}</span>
+      </div>
+      <div class="eisen-quadrante-body">
+        ${quadranti[key].length
+          ? quadranti[key].map(cardHTML).join('')
+          : '<div class="eisen-empty">Nessun task in questo quadrante.</div>'}
+      </div>
+    </div>`;
+
+  container.innerHTML = `
+    ${quadranteHTML('do')}
+    ${quadranteHTML('delegate')}
+    ${quadranteHTML('plan')}
+    ${quadranteHTML('drop')}
+  `;
+
+  // Click card → apre il modal di modifica
+  container.querySelectorAll('.eisen-card').forEach(el => {
+    el.addEventListener('click', () => apriModaleTask(el.dataset.id));
+  });
+}
+
 // ===== AGGIORNA TUTTE LE VISTE =====
 
 function aggiornaViste() {
@@ -2917,6 +3043,7 @@ function aggiornaViste() {
   renderTask();
   renderGantt();
   renderWorkload();
+  renderEisenhower();
   renderCalendario();
   // Aggiorna lista dipendenze e select padre del form "nuovo task" (le opzioni cambiano)
   if (document.getElementById('lista-dipendenze-nuovo')) {
@@ -3127,6 +3254,8 @@ function inizializza() {
     const statoTask = document.getElementById('task-stato').value;
     const stimaOre  = parseFloat(document.getElementById('task-stima').value) || 0;
     const completamento = parseFloat(document.getElementById('task-completamento').value) || 0;
+    const importanza = clampEisen(document.getElementById('task-importanza')?.value, 3);
+    const urgenza    = clampEisen(document.getElementById('task-urgenza')?.value, 3);
     const parentId  = document.getElementById('task-parent').value || null;
 
     if (!inizio || !fine) { alert('Inserisci data inizio e fine.'); return; }
@@ -3136,7 +3265,7 @@ function inizializza() {
     }
     if (!validaSommaEffort(tempAssegnazioniNuovo)) return;
 
-    aggiungiTask(nome, inizio, fine, statoTask, tempAssegnazioniNuovo, stimaOre, tempDipendenzeNuovo, parentId, completamento);
+    aggiungiTask(nome, inizio, fine, statoTask, tempAssegnazioniNuovo, stimaOre, tempDipendenzeNuovo, parentId, completamento, importanza, urgenza);
 
     e.target.reset();
     document.getElementById('task-stima').value = '0';
@@ -3395,6 +3524,12 @@ function inizializza() {
   // Kebab nav (mobile): navigazione tab dentro l'hamburger
   document.querySelectorAll('.kebab-nav').forEach(btn => {
     btn.addEventListener('click', () => attivaTab(btn.dataset.nav));
+  });
+
+  // Eisenhower: toggle "mostra epiche"
+  document.getElementById('eisen-mostra-epiche')?.addEventListener('change', e => {
+    eisenMostraEpiche = e.target.checked;
+    renderEisenhower();
   });
   document.getElementById('bs-close').addEventListener('click', chiudiBottomSheet);
   document.querySelector('#bottom-sheet-filtri .bs-backdrop')

@@ -878,17 +878,20 @@ input:focus, select:focus {
 .gantt-milestone:hover { transform: rotate(45deg) scale(1.15); }
 .gantt-milestone-label {
   position: absolute;
-  top: -4px;
-  left: 24px;
-  transform: rotate(-45deg);
-  transform-origin: top left;
+  top: 8px;
   white-space: nowrap;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: #1e293b;
-  background: rgba(255,255,255,0.85);
-  padding: 0 4px;
-  border-radius: 3px;
+  background: rgba(255,255,255,0.92);
+  padding: 2px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* --- Barra progresso epica --- */
@@ -2306,11 +2309,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .gantt-milestone { z-index: 2 !important; }
   /* Milestone label leggibile su sfondo scuro */
   .gantt-milestone-label {
-    background: rgba(15, 17, 23, 0.92) !important;
+    background: rgba(15, 17, 23, 0.95) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 1px 6px !important;
-    border-radius: 4px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 2px 8px !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
   }
   /* Nascondo i bottoni bottom-bar specifici della timeline se non siamo in Gantt/Workload */
@@ -2782,6 +2784,118 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   /* Frecce dipendenze: più sottili così non confondono su piccolo schermo */
   .gantt-arcs path { stroke-width: 1 !important; }
+}
+
+/* =====================================================================
+   ===== MATRICE DI EISENHOWER =========================================
+   ===================================================================== */
+
+.eisen-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  min-height: calc(100vh - 260px);
+}
+
+.eisen-quadrante {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  min-height: 280px;
+}
+
+.eisen-quadrante-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-3);
+}
+.eisen-quadrante-header strong { font-size: 0.9rem; }
+.eisen-quadrante-header .hint { font-size: 0.7rem; color: var(--color-text-muted); }
+
+.eisen-do       { border-top: 3px solid #ef4444; }    /* rosso: fai subito */
+.eisen-plan     { border-top: 3px solid #3b82f6; }    /* blu: pianifica */
+.eisen-delegate { border-top: 3px solid #f59e0b; }    /* giallo: delega */
+.eisen-drop     { border-top: 3px solid #64748b; }    /* grigio: elimina */
+
+.eisen-quadrante-body {
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.eisen-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: transform 0.06s ease, border-color 0.1s ease;
+}
+.eisen-card:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+.eisen-card-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+.eisen-card-epica {
+  display: inline-block;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.eisen-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.eisen-score {
+  display: inline-flex;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-surface-3);
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.eisen-card.stato-done { opacity: 0.55; }
+.eisen-card.stato-blocked { border-left: 3px solid #ef4444; }
+.eisen-card.stato-in-progress { border-left: 3px solid #8b5cf6; }
+.eisen-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-size: 0.78rem;
+  padding: 0.6rem 0.2rem;
+  text-align: center;
+}
+
+/* Mobile: stack verticale dei 4 quadranti */
+@media (max-width: 900px) {
+  .eisen-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    min-height: auto;
+  }
+  .eisen-quadrante { min-height: 160px; }
+  .eisen-quadrante-body { max-height: 50vh; }
 }
 
 /* =====================================================================
