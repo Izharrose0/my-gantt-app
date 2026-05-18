@@ -63,28 +63,14 @@ function inizializzaAuth() {
 
   document.getElementById('btn-login-google')?.addEventListener('click', async () => {
     const provider = new fb.GoogleAuthProvider();
-    // Prova prima il popup. Se il browser lo blocca (COOP / popup blocker /
-    // browser in-app come iOS Safari), fallback automatico al redirect.
+    // Su GitHub Pages signInWithPopup non funziona affidabilmente per via
+    // della Cross-Origin-Opener-Policy: il popup apre, l'utente fa login,
+    // ma Firebase non riesce a sapere che si e' chiuso e la sessione non
+    // viene completata. Usiamo sempre signInWithRedirect.
     try {
-      await fb.signInWithPopup(fb.auth, provider);
+      await fb.signInWithRedirect(fb.auth, provider);
     } catch (e) {
-      const codiciDaRedirect = new Set([
-        'auth/popup-blocked',
-        'auth/popup-closed-by-user',
-        'auth/cancelled-popup-request',
-        'auth/operation-not-supported-in-this-environment',
-        'auth/web-storage-unsupported',
-        'auth/internal-error'
-      ]);
-      if (codiciDaRedirect.has(e?.code)) {
-        try {
-          await fb.signInWithRedirect(fb.auth, provider);
-        } catch (e2) {
-          alert('Login fallito: ' + (e2.message || e2.code || e2));
-        }
-      } else {
-        alert('Login fallito: ' + (e.message || e.code || e));
-      }
+      alert('Login fallito: ' + (e.message || e.code || e));
     }
   });
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
