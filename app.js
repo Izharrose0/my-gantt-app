@@ -51,15 +51,23 @@ function inizializzaAuth() {
   }
   fb.onAuthStateChanged(fb.auth, user => {
     utenteCorrente = user;
+    console.log('[AUTH] onAuthStateChanged →', user?.email || 'logged out');
     aggiornaUIPermessi();
   });
 
   // Se torniamo da un signInWithRedirect, processa il risultato
-  fb.getRedirectResult(fb.auth).catch(e => {
-    if (e?.code && e.code !== 'auth/no-auth-event') {
-      console.warn('Errore getRedirectResult:', e);
-    }
-  });
+  fb.getRedirectResult(fb.auth)
+    .then(result => {
+      if (result?.user) {
+        console.log('[AUTH] getRedirectResult OK →', result.user.email);
+      } else {
+        console.log('[AUTH] getRedirectResult: nessun redirect pendente');
+      }
+    })
+    .catch(e => {
+      console.error('[AUTH] getRedirectResult ERRORE:', e?.code, e?.message, e);
+      alert('Login fallito al return:\n' + (e?.code || '') + '\n' + (e?.message || e));
+    });
 
   document.getElementById('btn-login-google')?.addEventListener('click', async () => {
     const provider = new fb.GoogleAuthProvider();
