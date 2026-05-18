@@ -20,9 +20,10 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
   const baseDayW = GANTT_DAY_W[viewModeCorrente] || 22;
   const cont = document.getElementById(containerId);
   if (!cont || !giorniLen) return baseDayW;
-  // Side column più stretta su mobile (vedi media query in style.css)
+  // Side column nascosta su mobile (≤900px): timeline a tutto schermo.
+  // Sopra i 900px è più stretta che sul desktop standard.
   const w = window.innerWidth;
-  const effectiveSide = w < 560 ? 130 : w < 900 ? 150 : sideWidthApprox;
+  const effectiveSide = w <= 900 ? 0 : sideWidthApprox;
   const disponibile = cont.clientWidth - effectiveSide - 4;
   if (disponibile <= 0) return baseDayW;
   const fitWidth = Math.floor(disponibile / giorniLen);
