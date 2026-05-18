@@ -45,7 +45,7 @@
             <input type="file" id="input-importa" accept=".json" hidden>
           </label>
           <div class="kebab-divider"></div>
-          <button type="button" class="kebab-item only-viewer" id="btn-login-google">Accedi come owner (Google)</button>
+          <button type="button" class="kebab-item only-viewer" id="btn-login-email">Accedi come owner (link via email)</button>
           <button type="button" class="kebab-item only-owner hidden" id="btn-logout">
             <span id="logout-label">Esci</span>
           </button>
@@ -545,8 +545,8 @@
       getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
     import {
-      getAuth, GoogleAuthProvider,
-      signInWithPopup, signInWithRedirect, getRedirectResult,
+      getAuth,
+      sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
       signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
@@ -573,8 +573,8 @@
     // Esposto a app.js (non-module) tramite window
     window.__firebase = {
       db, doc, onSnapshot, setDoc,
-      auth, GoogleAuthProvider,
-      signInWithPopup, signInWithRedirect, getRedirectResult,
+      auth,
+      sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
       signOut, onAuthStateChanged
     };
     window.dispatchEvent(new Event('firebase-ready'));

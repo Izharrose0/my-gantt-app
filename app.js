@@ -42,7 +42,10 @@ function aggiornaUIPermessi() {
   }
 }
 
-// Sottoscrive lo stato di auth e attiva i bottoni login/logout
+// Chiave localStorage per memorizzare l'email in attesa del link
+const EMAIL_LINK_STORAGE = 'gantt-app-pending-login-email';
+
+// Sottoscrive lo stato di auth e attiva il flow email link
 function inizializzaAuth() {
   const fb = window.__firebase;
   if (!fb || !fb.auth) {
@@ -55,32 +58,51 @@ function inizializzaAuth() {
     aggiornaUIPermessi();
   });
 
-  // Se torniamo da un signInWithRedirect, processa il risultato
-  fb.getRedirectResult(fb.auth)
-    .then(result => {
-      if (result?.user) {
-        console.log('[AUTH] getRedirectResult OK →', result.user.email);
-      } else {
-        console.log('[AUTH] getRedirectResult: nessun redirect pendente');
-      }
-    })
-    .catch(e => {
-      console.error('[AUTH] getRedirectResult ERRORE:', e?.code, e?.message, e);
-      alert('Login fallito al return:\n' + (e?.code || '') + '\n' + (e?.message || e));
-    });
+  // Se l'utente è appena arrivato cliccando il link dall'email, completa il login
+  if (fb.isSignInWithEmailLink(fb.auth, window.location.href)) {
+    let email = localStorage.getItem(EMAIL_LINK_STORAGE);
+    if (!email) {
+      email = window.prompt('Conferma la tua email per completare l\'accesso:');
+    }
+    if (email) {
+      fb.signInWithEmailLink(fb.auth, email, window.location.href)
+        .then(() => {
+          localStorage.removeItem(EMAIL_LINK_STORAGE);
+          // Pulisci l'URL: rimuovi oobCode/mode dal querystring
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+          console.log('[AUTH] signInWithEmailLink OK →', email);
+        })
+        .catch(e => {
+          console.error('[AUTH] signInWithEmailLink ERRORE:', e);
+          alert('Login fallito: ' + (e.message || e.code || e));
+        });
+    }
+  }
 
-  document.getElementById('btn-login-google')?.addEventListener('click', async () => {
-    const provider = new fb.GoogleAuthProvider();
-    // Su GitHub Pages signInWithPopup non funziona affidabilmente per via
-    // della Cross-Origin-Opener-Policy: il popup apre, l'utente fa login,
-    // ma Firebase non riesce a sapere che si e' chiuso e la sessione non
-    // viene completata. Usiamo sempre signInWithRedirect.
+  // Click "Accedi come owner (link via email)"
+  document.getElementById('btn-login-email')?.addEventListener('click', async () => {
+    const emailDefault = OWNER_EMAIL;
+    const email = window.prompt('Inserisci la tua email (di owner):', emailDefault);
+    if (!email) return;
+    const actionCodeSettings = {
+      url: window.location.origin + window.location.pathname,
+      handleCodeInApp: true
+    };
     try {
-      await fb.signInWithRedirect(fb.auth, provider);
+      await fb.sendSignInLinkToEmail(fb.auth, email, actionCodeSettings);
+      localStorage.setItem(EMAIL_LINK_STORAGE, email);
+      alert(
+        'Link di accesso inviato a:\n' + email +
+        '\n\nApri l\'email e clicca il link per completare l\'accesso.' +
+        '\nIl link scade dopo 1 ora.'
+      );
     } catch (e) {
-      alert('Login fallito: ' + (e.message || e.code || e));
+      console.error('[AUTH] sendSignInLinkToEmail ERRORE:', e);
+      alert('Invio link fallito: ' + (e.message || e.code || e));
     }
   });
+
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
