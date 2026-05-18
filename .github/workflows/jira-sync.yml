@@ -1,0 +1,43 @@
+name: Sync Jira → MY-GANTT
+
+# Trigger MANUALE: vai su Actions → "Sync Jira → MY-GANTT" → "Run workflow"
+on:
+  workflow_dispatch:
+    inputs:
+      project_key:
+        description: 'Project key Jira (lascia vuoto per usare JIRA_PROJECT_KEY del secret)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Run Jira sync
+        working-directory: scripts
+        env:
+          JIRA_DOMAIN:               ${{ secrets.JIRA_DOMAIN }}
+          JIRA_EMAIL:                ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN:            ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY:          ${{ secrets.JIRA_PROJECT_KEY }}
+          JIRA_PROJECT_KEY_OVERRIDE: ${{ inputs.project_key }}
+          JIRA_START_DATE_FIELD:     ${{ secrets.JIRA_START_DATE_FIELD }}
+          FIREBASE_SERVICE_ACCOUNT:  ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node jira-sync.mjs

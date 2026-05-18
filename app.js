@@ -106,6 +106,12 @@ function inizializzaAuth() {
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
+
+  // Click "Sincronizza con Jira" → apri la pagina del workflow GitHub Actions
+  document.getElementById('btn-sync-jira')?.addEventListener('click', () => {
+    const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-sync.yml';
+    window.open(url, '_blank', 'noopener');
+  });
 }
 
 // ID del task in modifica nel modal
