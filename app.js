@@ -60,15 +60,43 @@ let filtri = {
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
 let eisenModo = 'epiche';
 
-// Range di date di default: primo giorno del mese precedente
+// Helper: formato ISO YYYY-MM-DD
+function _fmtISODate(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Range di default per il Gantt: primo giorno del mese precedente
 // → ultimo giorno del mese successivo (rispetto a oggi)
 function rangeFiltroDefault() {
   const oggi = new Date();
   const inizio = new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1);
-  const fine   = new Date(oggi.getFullYear(), oggi.getMonth() + 2, 0); // giorno 0 del mese+2 = ultimo giorno del mese+1
-  const pad = n => String(n).padStart(2, '0');
-  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return { dataDa: fmt(inizio), dataA: fmt(fine) };
+  const fine   = new Date(oggi.getFullYear(), oggi.getMonth() + 2, 0);
+  return { dataDa: _fmtISODate(inizio), dataA: _fmtISODate(fine) };
+}
+
+// Range di default per il Workload: settimana precedente + settimana corrente
+// + 2 settimane successive (4 settimane totali, sempre dal lunedì al venerdì o domenica)
+function rangeFiltroDefaultWorkload() {
+  const oggi = new Date();
+  // Lunedì della settimana corrente
+  const giorno = oggi.getDay(); // 0=dom, 1=lun, ..., 6=sab
+  const offsetLun = giorno === 0 ? -6 : 1 - giorno;
+  const lunCorrente = new Date(oggi);
+  lunCorrente.setDate(oggi.getDate() + offsetLun);
+  // Inizio: lunedì della settimana precedente
+  const inizio = new Date(lunCorrente);
+  inizio.setDate(lunCorrente.getDate() - 7);
+  // Fine: domenica fra 2 settimane (settimana corrente + 2 successive)
+  const fine = new Date(lunCorrente);
+  fine.setDate(lunCorrente.getDate() + 20); // lun + 20 = domenica della 3a settimana successiva
+  return { dataDa: _fmtISODate(inizio), dataA: _fmtISODate(fine) };
+}
+
+// Restituisce il range di default per ciascuna vista
+function rangeFiltroDefaultPerVista(vista) {
+  if (vista === 'workload') return rangeFiltroDefaultWorkload();
+  return rangeFiltroDefault();
 }
 
 function rerenderVista(vista) {
@@ -3141,15 +3169,16 @@ function importaJSON(file) {
 function inizializza() {
   caricaStato();
 
-  // Default date range filter: mese precedente -> mese successivo
-  const def = rangeFiltroDefault();
+  // Date filter di default per vista
+  const defGantt = rangeFiltroDefault();          // mese prec. → mese succ.
+  const defWorkload = rangeFiltroDefaultWorkload(); // settimana prec. + corrente + 2 succ.
   if (!filtri.gantt.dataDa && !filtri.gantt.dataA) {
-    filtri.gantt.dataDa = def.dataDa;
-    filtri.gantt.dataA  = def.dataA;
+    filtri.gantt.dataDa = defGantt.dataDa;
+    filtri.gantt.dataA  = defGantt.dataA;
   }
   if (!filtri.workload.dataDa && !filtri.workload.dataA) {
-    filtri.workload.dataDa = def.dataDa;
-    filtri.workload.dataA  = def.dataA;
+    filtri.workload.dataDa = defWorkload.dataDa;
+    filtri.workload.dataA  = defWorkload.dataA;
   }
 
   // --- Tabs ---
@@ -3488,7 +3517,7 @@ function inizializza() {
       filtri[vista].persone = [];
       filtri[vista].stati   = [];
       filtri[vista].epica   = '';
-      const def = rangeFiltroDefault();
+      const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
       filtri[vista].dataA   = def.dataA;
       popolaFiltri();
