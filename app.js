@@ -1702,6 +1702,10 @@ function apriModaleTask(id) {
 
   document.getElementById('edit-nome').value = t.nome;
 
+  // Importanza/Urgenza: validi per tutti i tipi (task, epica, milestone)
+  document.getElementById('edit-importanza').value = clampEisen(t.importanza, 3);
+  document.getElementById('edit-urgenza').value    = clampEisen(t.urgenza, 3);
+
   if (isMilestone) {
     document.getElementById('edit-data-milestone').value = t.inizio || '';
     document.getElementById('edit-stato').value  = t.stato || 'todo';
@@ -1717,8 +1721,6 @@ function apriModaleTask(id) {
     document.getElementById('edit-stato').value  = t.stato || 'todo';
     document.getElementById('edit-stima').value  = Number(t.stimaOre) || 0;
     document.getElementById('edit-completamento').value = Number.isFinite(Number(t.completamento)) ? Number(t.completamento) : (t.stato === 'done' ? 100 : 0);
-    document.getElementById('edit-importanza').value = Number(t.importanza) || 3;
-    document.getElementById('edit-urgenza').value    = Number(t.urgenza)    || 3;
 
     tempAssegnazioniEdit = (t.assegnazioni || []).map(a => ({ ...a }));
     renderAssegnazioni('lista-assegnazioni-edit', tempAssegnazioniEdit);
@@ -1743,8 +1745,14 @@ function salvaModificaTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre
 
   t.nome = nome;
 
+  // Importanza/Urgenza: leggi sempre dal form (presente per tutti i tipi)
+  const impEdit = document.getElementById('edit-importanza');
+  const urgEdit = document.getElementById('edit-urgenza');
+  if (impEdit) t.importanza = clampEisen(impEdit.value, t.importanza);
+  if (urgEdit) t.urgenza    = clampEisen(urgEdit.value, t.urgenza);
+
   if (t.tipo === 'epica') {
-    // Le epiche modificano solo il nome
+    // Le epiche modificano nome + importanza/urgenza (sopra)
     salvaStato();
     chiudiModale();
     aggiornaViste();
@@ -1752,7 +1760,7 @@ function salvaModificaTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre
   }
 
   if (t.tipo === 'milestone') {
-    // Milestone: data, stato, parent, dipendenze
+    // Milestone: data, stato, parent, dipendenze + importanza/urgenza (sopra)
     const data = document.getElementById('edit-data-milestone').value;
     if (data) { t.inizio = data; t.fine = data; }
     t.stato = document.getElementById('edit-stato').value || 'todo';
@@ -1771,11 +1779,7 @@ function salvaModificaTask(nome, inizio, fine, statoTask, assegnazioni, stimaOre
   // Completamento: letto dal form (sovrascritto da clamp in base allo stato)
   const compInput = document.getElementById('edit-completamento');
   t.completamento = clampCompletamento(compInput ? compInput.value : t.completamento, statoTask);
-  // Eisenhower: importanza / urgenza (1-5)
-  const impEl = document.getElementById('edit-importanza');
-  const urgEl = document.getElementById('edit-urgenza');
-  t.importanza = clampEisen(impEl?.value, t.importanza);
-  t.urgenza    = clampEisen(urgEl?.value, t.urgenza);
+  // (importanza/urgenza già letti sopra: validi per tutti i tipi)
   t.assegnazioni = assegnazioni.filter(a => a.personaId).map(a => ({ ...a }));
   t.dipendenze = (dipendenze || []).filter(d => d !== t.id);
   // Validazione ciclo: non posso essere figlio di un mio discendente
@@ -2961,78 +2965,110 @@ function renderEisenhower() {
     return true;
   });
 
-  // Raggruppa per quadrante e ordina per (imp+urg) desc, poi nome
-  const quadranti = { do: [], plan: [], delegate: [], drop: [] };
+  // Raggruppa per coordinate (urgenza, importanza)
+  // grid[imp][urg] = [task,...] con imp ∈ 1..5, urg ∈ 1..5
+  const grid = {};
+  for (let imp = 1; imp <= 5; imp++) {
+    grid[imp] = {};
+    for (let urg = 1; urg <= 5; urg++) grid[imp][urg] = [];
+  }
   elenco.forEach(t => {
-    quadranti[quadranteEisen(t)].push(t);
+    const imp = clampEisen(t.importanza, 3);
+    const urg = clampEisen(t.urgenza, 3);
+    grid[imp][urg].push(t);
   });
-  Object.keys(quadranti).forEach(k => {
-    quadranti[k].sort((a, b) => {
-      const sa = (Number(a.importanza) || 3) + (Number(a.urgenza) || 3);
-      const sb = (Number(b.importanza) || 3) + (Number(b.urgenza) || 3);
-      if (sa !== sb) return sb - sa;
-      return (a.nome || '').localeCompare(b.nome || '');
-    });
-  });
-
-  const META = {
-    do:       { titolo: 'I — Fai subito',  hint: 'Importante & Urgente' },
-    plan:     { titolo: 'II — Pianifica',  hint: 'Importante, non urgente' },
-    delegate: { titolo: 'III — Delega',    hint: 'Urgente, non importante' },
-    drop:     { titolo: 'IV — Elimina',    hint: 'Né urgente né importante' }
-  };
 
   const cardHTML = t => {
-    const imp = Number(t.importanza) || 3;
-    const urg = Number(t.urgenza)    || 3;
+    const imp = clampEisen(t.importanza, 3);
+    const urg = clampEisen(t.urgenza, 3);
     const isEpica = t.tipo === 'epica';
-    const agg = isEpica ? aggregaEpica(t) : null;
-    const pct = isEpica ? agg.completamento : percCompletamento(t);
-    const stima = isEpica ? (agg.stimaOre || 0) : (Number(t.stimaOre) || 0);
-    const persone = isEpica ? [] : (t.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
-    const avatars = persone.slice(0, 4).map(p => avatar(p, 'xs')).join('');
-    const extra = persone.length > 4 ? `<span class="avatar avatar-xs" style="background:#64748b">+${persone.length - 4}</span>` : '';
-    const epicaParent = !isEpica && t.parentId ? stato.task.find(x => x.id === t.parentId) : null;
-    const breadcrumb = epicaParent ? `<span class="eisen-card-epica">${escapeHtml(epicaParent.nome)}</span>` : '';
+    const persone = isEpica
+      ? raccogliAssegnatariEpica(t)
+      : (t.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
+    const avatars = persone.slice(0, 3).map(p => avatar(p, 'xs')).join('');
+    const extra = persone.length > 3
+      ? `<span class="avatar avatar-xs" style="background:#64748b">+${persone.length - 3}</span>`
+      : '';
     return `
-      <div class="eisen-card stato-${t.stato || 'todo'}" data-id="${t.id}" title="Importanza ${imp} · Urgenza ${urg}">
-        ${isEpica ? '<span class="label-fte epica-badge">EPICA</span>' : ''}
-        <div class="eisen-card-name">${escapeHtml(t.nome)}</div>
-        ${breadcrumb}
-        <div class="eisen-card-meta">
-          <span class="eisen-score" title="Importanza">Imp ${imp}</span>
-          <span class="eisen-score" title="Urgenza">Urg ${urg}</span>
-          ${stima > 0 ? `<span class="label-fte">⏱ ${stima}h</span>` : ''}
-          ${pct > 0 ? `<span class="label-fte">${pct}%</span>` : ''}
-        </div>
-        ${avatars || extra ? `<div class="avatar-group">${avatars}${extra}</div>` : ''}
+      <div class="eisen-card stato-${t.stato || 'todo'}${isEpica ? ' eisen-card-epica' : ''}"
+           data-id="${t.id}"
+           title="${escapeHtml(t.nome)} · Importanza ${imp} · Urgenza ${urg}">
+        <span class="eisen-card-name">${escapeHtml(t.nome)}</span>
+        ${avatars || extra ? `<span class="avatar-group">${avatars}${extra}</span>` : ''}
       </div>`;
   };
 
-  const quadranteHTML = (key) => `
-    <div class="eisen-quadrante eisen-${key}">
-      <div class="eisen-quadrante-header">
-        <strong>${META[key].titolo}</strong>
-        <span class="hint">${META[key].hint} · ${quadranti[key].length}</span>
-      </div>
-      <div class="eisen-quadrante-body">
-        ${quadranti[key].length
-          ? quadranti[key].map(cardHTML).join('')
-          : '<div class="eisen-empty">Nessun task in questo quadrante.</div>'}
-      </div>
-    </div>`;
+  // Etichette dei valori (5 a sinistra in alto, 1 in basso)
+  const cellHTML = (imp, urg) => {
+    const tasks = grid[imp][urg];
+    const impAlto = imp >= 3;
+    const urgAlto = urg >= 3;
+    const quad = impAlto && urgAlto ? 'do'
+               : impAlto && !urgAlto ? 'plan'
+               : !impAlto && urgAlto ? 'delegate'
+               : 'drop';
+    return `
+      <div class="eisen-cell eisen-q-${quad}" data-imp="${imp}" data-urg="${urg}">
+        ${tasks.length
+          ? tasks.map(cardHTML).join('')
+          : '<span class="eisen-cell-empty">·</span>'}
+      </div>`;
+  };
+
+  // Header colonne (urgenza in alto, 1→5 da sinistra a destra)
+  let headerUrg = '<div class="eisen-axis-corner"></div>';
+  for (let urg = 1; urg <= 5; urg++) {
+    headerUrg += `<div class="eisen-axis-label eisen-axis-x">${urg}</div>`;
+  }
+
+  // Righe: importanza dall'alto (5) verso il basso (1)
+  let righe = '';
+  for (let imp = 5; imp >= 1; imp--) {
+    righe += `<div class="eisen-axis-label eisen-axis-y">${imp}</div>`;
+    for (let urg = 1; urg <= 5; urg++) {
+      righe += cellHTML(imp, urg);
+    }
+  }
 
   container.innerHTML = `
-    ${quadranteHTML('do')}
-    ${quadranteHTML('delegate')}
-    ${quadranteHTML('plan')}
-    ${quadranteHTML('drop')}
+    <div class="eisen-axis-title eisen-axis-title-y">Importanza ↑</div>
+    <div class="eisen-axis-title eisen-axis-title-x">Urgenza →</div>
+    <div class="eisen-plane">
+      ${headerUrg}
+      ${righe}
+    </div>
+    <div class="eisen-legend">
+      <span class="eisen-legend-item"><span class="eisen-legend-dot eisen-q-do"></span>Fai subito</span>
+      <span class="eisen-legend-item"><span class="eisen-legend-dot eisen-q-plan"></span>Pianifica</span>
+      <span class="eisen-legend-item"><span class="eisen-legend-dot eisen-q-delegate"></span>Delega</span>
+      <span class="eisen-legend-item"><span class="eisen-legend-dot eisen-q-drop"></span>Elimina</span>
+    </div>
   `;
 
   // Click card → apre il modal di modifica
   container.querySelectorAll('.eisen-card').forEach(el => {
     el.addEventListener('click', () => apriModaleTask(el.dataset.id));
   });
+}
+
+// Raccogli persone uniche assegnate a un'epica (via discendenti foglia)
+function raccogliAssegnatariEpica(epica) {
+  const visti = new Set();
+  const out = [];
+  function walk(id) {
+    const figli = stato.task.filter(x => x.parentId === id);
+    if (!figli.length) {
+      const self = stato.task.find(x => x.id === id);
+      if (self) (self.assegnazioni || []).forEach(a => {
+        if (visti.has(a.personaId)) return;
+        visti.add(a.personaId);
+        const p = trovaPersona(a.personaId);
+        if (p) out.push(p);
+      });
+    } else figli.forEach(f => walk(f.id));
+  }
+  walk(epica.id);
+  return out;
 }
 
 // ===== AGGIORNA TUTTE LE VISTE =====
