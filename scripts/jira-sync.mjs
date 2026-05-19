@@ -242,30 +242,55 @@ function buildTask(issue, existing, nextOrdine) {
   };
 }
 
+// Normalizza un nome per il match: minuscolo, niente spazi multipli,
+// niente spazi ai bordi.
+function normNome(s) {
+  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function resolveAssignee(issue, persone, personeNuove) {
   const a = issue.fields?.assignee;
-  if (!a || !a.emailAddress) return [];
-  // Match per email o accountId
-  let p = [...persone, ...personeNuove].find(x =>
-    (x.email && a.emailAddress && x.email.toLowerCase() === a.emailAddress.toLowerCase()) ||
-    (x.jiraAccountId && a.accountId && x.jiraAccountId === a.accountId)
-  );
+  if (!a) return [];
+
+  const accountId = a.accountId || null;
+  const email     = (a.emailAddress || '').trim().toLowerCase();
+  const displayN  = normNome(a.displayName);
+
+  const all = [...persone, ...personeNuove];
+
+  // Match in ordine di affidabilità:
+  //   1. jiraAccountId (la chiave canonica di Jira, sempre presente)
+  //   2. email (case-insensitive) — spesso null su Jira Cloud per privacy
+  //   3. displayName (case-insensitive) — fallback quando l'email manca
+  let p = accountId
+    ? all.find(x => x.jiraAccountId && x.jiraAccountId === accountId)
+    : null;
+  if (!p && email) {
+    p = all.find(x => (x.email || '').toLowerCase() === email);
+  }
+  if (!p && displayN) {
+    p = all.find(x => normNome(x.nome) === displayN);
+  }
+
   if (!p) {
+    // Nuova persona: auto-create con i metadati Jira
     p = {
       id: generaId(),
-      nome: a.displayName || (a.emailAddress || '').split('@')[0] || 'Nuovo',
+      nome: a.displayName || email.split('@')[0] || 'Nuovo',
       ruolo: 'Da Jira',
       fte: 1.0,
       colore: PALETTE[(persone.length + personeNuove.length) % PALETTE.length],
       costoOrario: 0,
       ferie: [],
-      email: a.emailAddress,
-      jiraAccountId: a.accountId || null
+      email: a.emailAddress || null,
+      jiraAccountId: accountId
     };
     personeNuove.push(p);
-  } else if (!p.email && a.emailAddress) {
-    // Aggiorna l'email se mancante
-    p.email = a.emailAddress;
+  } else {
+    // Aggiorna in-place i metadati Jira sulla persona esistente
+    // (cosi' i prossimi sync matchano per accountId, piu' robusto del nome)
+    if (!p.jiraAccountId && accountId) p.jiraAccountId = accountId;
+    if (!p.email && a.emailAddress)    p.email = a.emailAddress;
   }
   return [{ personaId: p.id, effort: 100 }];
 }
