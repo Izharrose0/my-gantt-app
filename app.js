@@ -898,12 +898,15 @@ function migraStato(dati) {
     if (t.ordine == null) t.ordine = i;
   });
 
-  // Marca come epica retroattivamente qualunque task che abbia figli (backup vecchi)
+  // Backward-compat: nei backup vecchi (pre-tipo-field) qualsiasi task con
+  // figli era implicitamente un'epica. Lo applichiamo SOLO ai task creati
+  // manualmente (senza jiraKey): le Story importate da Jira che hanno
+  // sub-task devono restare 'task' (non sono Epic Jira).
   const idsConFigli = new Set(
     dati.task.filter(t => t.parentId).map(t => t.parentId)
   );
   dati.task.forEach(t => {
-    if (idsConFigli.has(t.id)) t.tipo = 'epica';
+    if (idsConFigli.has(t.id) && !t.jiraKey) t.tipo = 'epica';
   });
 
   // Festività (può essere vuoto)
