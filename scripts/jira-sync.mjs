@@ -110,6 +110,60 @@ async function jiraRequest(path, { method = 'GET', body } = {}) {
   return resp.json();
 }
 
+// PUT autenticato su Jira: ritorna null su 204 (no content). Diversamente
+// da jiraRequest, NON aborta lo script su errore — il chiamante gestisce.
+async function jiraPut(path, body) {
+  const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
+  const resp = await fetch(`https://${JIRA_DOMAIN}${path}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`PUT ${path} → ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  if (resp.status === 204) return null;
+  return resp.json().catch(() => null);
+}
+
+// Pusha verso Jira SOLO le date (inizio/fine) modificate manualmente in
+// MY-GANTT dopo l'ultimo sync. Confronta t.inizio vs t.jiraSyncedInizio.
+// Solo task con jiraKey + tipo='task' + valori validi. Errori per singolo
+// task vengono loggati ma non interrompono il sync.
+async function pushModificheDate(stato) {
+  const candidati = stato.task.filter(t =>
+    t.jiraKey && t.tipo === 'task' &&
+    ((t.inizio && t.inizio !== t.jiraSyncedInizio) ||
+     (t.fine   && t.fine   !== t.jiraSyncedFine))
+  );
+  if (candidati.length === 0) {
+    console.log('  Nessuna modifica locale di date da spingere su Jira.');
+    return { ok: 0, ko: 0 };
+  }
+  console.log(`▶ Push date verso Jira: ${candidati.length} task modificati in MY-GANTT...`);
+  let ok = 0, ko = 0;
+  for (const t of candidati) {
+    const fields = {};
+    if (t.inizio) fields[resolvedStartDateField] = t.inizio;
+    if (t.fine)   fields.duedate = t.fine;
+    try {
+      await jiraPut(`/rest/api/3/issue/${encodeURIComponent(t.jiraKey)}`, { fields });
+      console.log(`    ✓ ${t.jiraKey}: inizio ${t.jiraSyncedInizio || '∅'}→${t.inizio || '∅'}, fine ${t.jiraSyncedFine || '∅'}→${t.fine || '∅'}`);
+      ok++;
+    } catch (e) {
+      console.log(`    ✗ ${t.jiraKey}: ${e.message}`);
+      ko++;
+    }
+  }
+  console.log(`  Push completato: ${ok} OK, ${ko} errori`);
+  return { ok, ko };
+}
+
 // Trova il customfield che rappresenta la "Start date" interrogando i
 // metadati Jira. Strategia:
 //   1. Variabile d'ambiente JIRA_START_DATE_FIELD (override esplicito)
@@ -277,7 +331,10 @@ function buildTask(issue, existing, nextOrdine) {
     ...preserved,
     jiraKey: issue.key,
     jiraUrl: `https://${JIRA_DOMAIN}/browse/${issue.key}`,
-    jiraUpdated: new Date().toISOString()
+    jiraUpdated: new Date().toISOString(),
+    // Snapshot per detection dei delta manuali al prossimo sync
+    jiraSyncedInizio: start,
+    jiraSyncedFine:   due
   };
 }
 
@@ -369,6 +426,19 @@ async function main() {
   console.log('▶ Rilevo campo Start date...');
   await autoDetectStartDateField();
 
+  // Step 1: leggi lo stato corrente da Firestore. Serve per detection dei
+  // delta locali (date modificate in MY-GANTT che vanno re-pushate su Jira).
+  console.log('▶ Lettura stato Firestore (pre-push)...');
+  const snapPre = await docRef.get();
+  const statoPre = snapPre.exists ? snapPre.data() : null;
+
+  // Step 2: pusha le modifiche locali di start/end verso Jira (solo dei
+  // task che hanno t.inizio/t.fine diversi dallo snapshot jiraSyncedX).
+  if (statoPre && Array.isArray(statoPre.task)) {
+    await pushModificheDate(statoPre);
+  }
+
+  // Step 3: fetch fresco da Jira (ora include eventuali nostre modifiche).
   console.log('▶ Fetch issue da Jira...');
   const issues = await fetchAllIssues();
   console.log(`✓ ${issues.length} issue ricevute`);
@@ -420,9 +490,9 @@ async function main() {
     }
   }
 
-  console.log('▶ Lettura stato Firestore...');
-  const snap = await docRef.get();
-  const stato = snap.exists ? snap.data() : { persone: [], task: [], festivita: [] };
+  // Riutilizzo lo statoPre letto prima del push (le scritture su Firestore
+  // avvengono solo dal frontend, lo script non lo modifica fino al set finale)
+  const stato = statoPre || { persone: [], task: [], festivita: [] };
   if (!Array.isArray(stato.task))    stato.task = [];
   if (!Array.isArray(stato.persone)) stato.persone = [];
 

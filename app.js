@@ -1016,9 +1016,14 @@ function migraStato(dati) {
       // Visibilità: true = task/epica nascosta da Gantt/Workload/Eisenhower
       nascosta:   t.nascosta === true,
       // Campi Jira (preservati se presenti)
-      jiraKey:     t.jiraKey || null,
-      jiraUrl:     t.jiraUrl || null,
-      jiraUpdated: t.jiraUpdated || null
+      jiraKey:           t.jiraKey || null,
+      jiraUrl:           t.jiraUrl || null,
+      jiraUpdated:       t.jiraUpdated || null,
+      // Snapshot delle date all'ultimo sync da Jira: serve a sapere se
+      // l'utente ha modificato inizio/fine in MY-GANTT dopo l'import
+      // (così il prossimo sync le ripusha verso Jira).
+      jiraSyncedInizio:  t.jiraSyncedInizio || null,
+      jiraSyncedFine:    t.jiraSyncedFine || null
     };
   });
 
