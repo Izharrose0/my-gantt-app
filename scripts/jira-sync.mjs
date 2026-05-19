@@ -288,19 +288,16 @@ function buildTask(issue, existing, nextOrdine) {
   const statoNuovo = mapStato(issue);
   const orig = Number(f.timetracking?.originalEstimateSeconds || 0);
   const stimaOre = arrotondaOreA05(orig / 3600);
-  // Date: per le epiche lasciamo vuote (frontend le calcola dai figli).
-  // Per i task: Start date e Due date da Jira tal quali. Nessuna correzione
-  // basata sulle ore stimate — l'utente si fida del piano in Jira.
-  let start = null;
-  let due = null;
-  if (!isEpic) {
-    const startRaw = f[resolvedStartDateField];
-    start = typeof startRaw === 'string' ? startRaw.slice(0, 10) : null;
-    due   = f.duedate || null;
-    const norm = normalizzaDate(start, due);
-    start = norm.inizio;
-    due   = norm.fine;
-  }
+  // Date: importiamo start/due da Jira sia per epiche che per task.
+  // Per le epiche aggregaEpica nel frontend useranno i figli SE presenti;
+  // se l'epica non ha ancora figli linkati, viene comunque renderizzata
+  // come barra usando le date che Jira ha sull'epic stessa.
+  const startRaw = f[resolvedStartDateField];
+  let start = typeof startRaw === 'string' ? startRaw.slice(0, 10) : null;
+  let due   = f.duedate || null;
+  const norm = normalizzaDate(start, due);
+  start = norm.inizio;
+  due   = norm.fine;
 
   // Campi MY-GANTT-only mai sovrascritti dal sync
   const preserved = existing ? {
