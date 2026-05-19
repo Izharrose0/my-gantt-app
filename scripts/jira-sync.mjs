@@ -373,16 +373,51 @@ async function main() {
   const issues = await fetchAllIssues();
   console.log(`✓ ${issues.length} issue ricevute`);
 
-  // Diagnostica: stampa le date raw dei primi task per capire se la
-  // detection del campo Start date sta funzionando
-  const sample = issues.filter(it => it.fields?.issuetype?.name !== 'Epic').slice(0, 5);
-  if (sample.length) {
-    console.log(`▶ Esempio date (campo Start = ${resolvedStartDateField}):`);
-    sample.forEach(it => {
+  // Diagnostica delle date.
+  // Conteggio: quanti task non-Epic hanno start/due popolati?
+  const nonEpics = issues.filter(it => it.fields?.issuetype?.name !== 'Epic');
+  const conStart = nonEpics.filter(it => it.fields?.[resolvedStartDateField]).length;
+  const conDue   = nonEpics.filter(it => it.fields?.duedate).length;
+  console.log(`▶ Diagnostica date (campo Start = ${resolvedStartDateField}):`);
+  console.log(`    Task non-Epic totali: ${nonEpics.length}`);
+  console.log(`    con Start date popolata: ${conStart} / ${nonEpics.length}`);
+  console.log(`    con Due date popolata:   ${conDue} / ${nonEpics.length}`);
+
+  // Sample dei 5 più recenti (in fondo all'array, fetch è ORDER BY created ASC)
+  const recenti = nonEpics.slice(-5);
+  if (recenti.length) {
+    console.log(`    Ultimi 5 task non-Epic creati (per debug):`);
+    recenti.forEach(it => {
       const f = it.fields || {};
       const sRaw = f[resolvedStartDateField];
-      console.log(`    ${it.key.padEnd(12)} start=${JSON.stringify(sRaw) || 'null'}  due=${JSON.stringify(f.duedate) || 'null'}`);
+      console.log(`      ${it.key.padEnd(12)} start=${JSON.stringify(sRaw) || 'null'}  due=${JSON.stringify(f.duedate) || 'null'}`);
     });
+  }
+  // Se Start risulta sempre null ma esistono Due date popolate, scarica
+  // l'ultima issue con TUTTI i campi (la search/jql restituisce solo i
+  // campi richiesti) per individuare il custom field giusto.
+  if (conStart === 0 && conDue > 0 && nonEpics.length > 0) {
+    const lastKey = nonEpics[nonEpics.length - 1].key;
+    console.log(`    ⚠ Tutti i task hanno Start = null ma alcuni hanno Due popolata.`);
+    console.log(`    Scarico ${lastKey} con TUTTI i campi per identificare quello giusto...`);
+    try {
+      const full = await jiraRequest(`/rest/api/3/issue/${encodeURIComponent(lastKey)}?fields=*all`);
+      console.log(`    Campi non vuoti su ${lastKey} che potrebbero essere "Start date":`);
+      Object.entries(full.fields || {}).forEach(([k, v]) => {
+        if (v === null || v === undefined || v === '') return;
+        if (Array.isArray(v) && v.length === 0) return;
+        if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) return;
+        // Concentrati sui customfield e su campi data
+        const isDateLike = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
+        if (k.startsWith('customfield_') || isDateLike) {
+          const preview = typeof v === 'string' ? v.slice(0, 30) : JSON.stringify(v).slice(0, 60);
+          console.log(`      ${k}  =  ${preview}`);
+        }
+      });
+      console.log(`    Trovato il campo Start date qui sopra? Settalo come secret JIRA_START_DATE_FIELD nel repo GitHub.`);
+    } catch (e) {
+      console.log(`    Impossibile fare il dump (${e.message}).`);
+    }
   }
 
   console.log('▶ Lettura stato Firestore...');
