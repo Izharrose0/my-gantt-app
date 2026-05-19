@@ -112,6 +112,78 @@ function inizializzaAuth() {
     const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-sync.yml';
     window.open(url, '_blank', 'noopener');
   });
+
+  // Click "Gestisci visibilità epiche" → apri modale
+  document.getElementById('btn-gestisci-visibilita')?.addEventListener('click', apriModaleVisibilita);
+  document.getElementById('btn-chiudi-modal-visibilita')?.addEventListener('click', () => {
+    document.getElementById('modal-visibilita-overlay').classList.add('hidden');
+  });
+  document.getElementById('btn-vis-tutti')?.addEventListener('click', () => setVisibilitaTutte(false));
+  document.getElementById('btn-vis-nessuno')?.addEventListener('click', () => setVisibilitaTutte(true));
+  document.getElementById('btn-vis-solo-jira')?.addEventListener('click', () => {
+    stato.task.forEach(t => {
+      if (t.tipo !== 'epica') return;
+      t.nascosta = !t.jiraKey; // solo le jira-epiche restano visibili
+    });
+    salvaStato();
+    renderListaVisibilita();
+    aggiornaViste();
+  });
+}
+
+// ===== GESTIONE VISIBILITÀ EPICHE =====
+
+function apriModaleVisibilita() {
+  renderListaVisibilita();
+  document.getElementById('modal-visibilita-overlay').classList.remove('hidden');
+}
+
+function setVisibilitaTutte(nascosta) {
+  stato.task.forEach(t => {
+    if (t.tipo === 'epica') t.nascosta = nascosta;
+  });
+  salvaStato();
+  renderListaVisibilita();
+  aggiornaViste();
+}
+
+function renderListaVisibilita() {
+  const cont = document.getElementById('lista-visibilita-epiche');
+  if (!cont) return;
+  const epiche = stato.task
+    .filter(t => t.tipo === 'epica')
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  if (!epiche.length) {
+    cont.innerHTML = '<li class="empty-state">Nessuna epica trovata.</li>';
+    return;
+  }
+  cont.innerHTML = epiche.map(e => {
+    const figli = stato.task.filter(t => t.parentId === e.id).length;
+    const visibile = !e.nascosta;
+    const badge = e.jiraKey
+      ? `<span class="label-fte epica-badge" title="Importata da Jira">${escapeHtml(e.jiraKey)}</span>`
+      : '<span class="label-fte" title="Creata manualmente">manuale</span>';
+    return `
+      <li class="vis-row${visibile ? '' : ' vis-hidden'}">
+        <label class="vis-toggle">
+          <input type="checkbox" data-vis-id="${e.id}" ${visibile ? 'checked' : ''}>
+          <span class="vis-name">${escapeHtml(e.nome)}</span>
+          ${badge}
+          <span class="label-fte" title="Numero figli diretti">${figli} task</span>
+        </label>
+      </li>`;
+  }).join('');
+
+  cont.querySelectorAll('input[data-vis-id]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const t = stato.task.find(x => x.id === cb.dataset.visId);
+      if (!t) return;
+      t.nascosta = !cb.checked;
+      cb.closest('.vis-row')?.classList.toggle('vis-hidden', !cb.checked);
+      salvaStato();
+      aggiornaViste();
+    });
+  });
 }
 
 // ID del task in modifica nel modal
@@ -568,7 +640,20 @@ function popolaFiltri() {
 }
 
 // True se un task passa i filtri della vista
+// True se il task è nascosto (manualmente flaggato come tale o se un suo
+// antenato è nascosto). Usato per escludere intere epiche da Jira dalle viste.
+function taskNascosto(t) {
+  let cur = t;
+  while (cur) {
+    if (cur.nascosta === true) return true;
+    if (!cur.parentId) break;
+    cur = stato.task.find(x => x.id === cur.parentId);
+  }
+  return false;
+}
+
 function passaFiltri(t, f) {
+  if (taskNascosto(t)) return false;
   if (f.stati.length && !f.stati.includes(t.stato) && t.tipo !== 'epica') return false;
   if (f.persone.length) {
     if (t.tipo === 'epica') {
@@ -798,7 +883,13 @@ function migraStato(dati) {
       ordine: Number.isFinite(t.ordine) ? t.ordine : null,
       // Scala 1-4: i vecchi valori 5 vengono compressi a 4
       urgenza:    Number.isFinite(urg) && urg >= 1 ? Math.min(4, urg) : 3,
-      importanza: Number.isFinite(imp) && imp >= 1 ? Math.min(4, imp) : 3
+      importanza: Number.isFinite(imp) && imp >= 1 ? Math.min(4, imp) : 3,
+      // Visibilità: true = task/epica nascosta da Gantt/Workload/Eisenhower
+      nascosta:   t.nascosta === true,
+      // Campi Jira (preservati se presenti)
+      jiraKey:     t.jiraKey || null,
+      jiraUrl:     t.jiraUrl || null,
+      jiraUpdated: t.jiraUpdated || null
     };
   });
 

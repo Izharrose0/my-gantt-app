@@ -40,6 +40,7 @@
             <div class="kebab-divider"></div>
           </div>
           <button type="button" class="kebab-item only-owner" id="btn-sync-jira">Sincronizza con Jira →</button>
+          <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
           <div class="kebab-divider only-owner"></div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
           <label class="kebab-item only-owner">
@@ -504,6 +505,26 @@
         </div>
         <button type="submit" class="btn btn-primary">Salva modifiche</button>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL GESTIONE VISIBILITÀ EPICHE =================== -->
+  <div id="modal-visibilita-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Gestisci visibilità epiche</h3>
+        <button class="btn-close" id="btn-chiudi-modal-visibilita" type="button">×</button>
+      </header>
+      <p class="hint">
+        Spunta le epiche che vuoi <strong>mostrare</strong> in Gantt, Workload ed Eisenhower.
+        Le epiche deselezionate (e tutte le loro task) restano nei dati ma non vengono visualizzate.
+      </p>
+      <div class="form-inline" style="margin-bottom:0.5rem">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-tutti">Seleziona tutte</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-nessuno">Deseleziona tutte</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-solo-jira">Solo da Jira</button>
+      </div>
+      <div id="lista-visibilita-epiche" class="lista"></div>
     </div>
   </div>
 

@@ -62,10 +62,15 @@ const docRef = db.collection('workspaces').doc('main');
 
 // ===== Fetch da Jira con paginazione =====
 
+// customfield_10014 = Epic Link nei classic project di Jira (link
+// custom Story -> Epic). Nei next-gen project si usa fields.parent.key
+// che e' gia' supportato.
+const EPIC_LINK_FIELD = 'customfield_10014';
+
 const JIRA_FIELDS = [
   'summary', 'status', 'issuetype', 'parent', 'assignee',
   'duedate', 'created', 'timetracking', 'priority', 'labels',
-  startDateField
+  startDateField, EPIC_LINK_FIELD
 ];
 
 async function jiraRequest(path, { method = 'GET', body } = {}) {
@@ -160,12 +165,14 @@ function buildTask(issue, existing, nextOrdine) {
     completamento: existing.completamento ?? 0,
     importanza:    existing.importanza ?? 3,
     urgenza:       existing.urgenza ?? 3,
-    dipendenze:    Array.isArray(existing.dipendenze) ? existing.dipendenze.slice() : []
+    dipendenze:    Array.isArray(existing.dipendenze) ? existing.dipendenze.slice() : [],
+    nascosta:      existing.nascosta === true
   } : {
     completamento: statoNuovo === 'done' ? 100 : 0,
     importanza: 3,
     urgenza: 3,
-    dipendenze: []
+    dipendenze: [],
+    nascosta: false
   };
 
   return {
@@ -248,12 +255,23 @@ async function main() {
     jiraKeyToTask.set(issue.key, task);
   }
 
-  // 2nd pass: parent.key → parentId
+  // 2nd pass: risolvi parent. In ordine:
+  //   1. fields.parent.key (next-gen, sub-task->parent, Story->Epic moderno)
+  //   2. fields[customfield_10014] (Epic Link classico: Story->Epic)
+  let orphans = 0;
   for (const issue of issues) {
-    const pk = issue.fields?.parent?.key;
-    if (pk && jiraKeyToTask.has(pk)) {
-      jiraKeyToTask.get(issue.key).parentId = jiraKeyToTask.get(pk).id;
+    const direct = issue.fields?.parent?.key;
+    const epicLink = issue.fields?.[EPIC_LINK_FIELD] || null;
+    const parentKey = direct || epicLink;
+    if (!parentKey) continue;
+    if (jiraKeyToTask.has(parentKey)) {
+      jiraKeyToTask.get(issue.key).parentId = jiraKeyToTask.get(parentKey).id;
+    } else {
+      orphans++;
     }
+  }
+  if (orphans > 0) {
+    console.log(`  ⚠ ${orphans} issue hanno un parent fuori dal progetto importato (resteranno top-level)`);
   }
 
   // Merge: task manuali (senza jiraKey) preservati intoccati, jira-tasks ricostruiti
