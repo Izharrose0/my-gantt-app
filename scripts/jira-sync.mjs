@@ -111,38 +111,59 @@ async function jiraRequest(path, { method = 'GET', body } = {}) {
 }
 
 // Trova il customfield che rappresenta la "Start date" interrogando i
-// metadati Jira. Cerca per nome ("Start date" / "Data inizio") e fallisce
-// in modo silenzioso lasciando il default.
+// metadati Jira. Strategia:
+//   1. Variabile d'ambiente JIRA_START_DATE_FIELD (override esplicito)
+//   2. Match per schema.custom (più affidabile, ignora i nomi localizzati)
+//   3. Match per nome (case-insensitive, varianti italiane/inglesi)
 async function autoDetectStartDateField() {
-  // Se l'utente ha forzato un campo via env var, rispettalo
   if (process.env.JIRA_START_DATE_FIELD) {
     console.log(`  Start date field: ${resolvedStartDateField} (forzato da env)`);
     return;
   }
   try {
     const fields = await jiraRequest('/rest/api/3/field');
-    const candidates = [
-      'Start date',
-      'Start Date',
-      'Data inizio',
-      'Data di inizio',
-      'startDate',
-      'Target start'
-    ].map(s => s.toLowerCase());
-    const match = fields.find(f =>
-      candidates.includes((f.name || '').toLowerCase())
-      && f.id && f.id.startsWith('customfield_')
-    );
+
+    // Match preferito: schema.custom (la "Start date" di Jira Cloud Software
+    // è jpo-custom-field-baseline-start, quella legacy è "datepicker" + nome)
+    const schemaSubstr = [
+      'jpo-custom-field-baseline-start',
+      'baseline-start',
+      'start-date'
+    ];
+
+    const nameCandidates = [
+      'start date', 'start_date', 'startdate',
+      'data inizio', 'data di inizio', 'inizio',
+      'inizio pianificato', 'target start'
+    ];
+
+    let match = fields.find(f => {
+      if (!f.id?.startsWith('customfield_')) return false;
+      const sc = (f.schema?.custom || '').toLowerCase();
+      return schemaSubstr.some(s => sc.includes(s));
+    });
+
+    if (!match) {
+      match = fields.find(f =>
+        f.id?.startsWith('customfield_')
+        && nameCandidates.includes((f.name || '').toLowerCase())
+      );
+    }
+
     if (match) {
       resolvedStartDateField = match.id;
       console.log(`  Start date field: ${match.id} ("${match.name}") — auto-rilevato`);
     } else {
-      console.log(`  ⚠ Nessun campo "Start date" trovato nei metadati Jira. Uso default: ${resolvedStartDateField}`);
-      console.log(`    Custom field disponibili in questa istanza:`);
+      console.log(`  ⚠ Nessun campo Start date trovato. Uso default: ${resolvedStartDateField}`);
+      console.log(`    Custom field con "date" o "inizio" nel nome (per scegliere manualmente):`);
       fields
         .filter(f => f.id?.startsWith('customfield_'))
-        .slice(0, 30)
-        .forEach(f => console.log(`      ${f.id}  →  "${f.name}"`));
+        .filter(f => {
+          const n = (f.name || '').toLowerCase();
+          return n.includes('date') || n.includes('inizio') || n.includes('start');
+        })
+        .forEach(f => console.log(`      ${f.id}  →  "${f.name}"  (schema: ${f.schema?.custom || 'n/a'})`));
+      console.log(`    Per forzare manualmente, setta il secret JIRA_START_DATE_FIELD a uno dei sopra.`);
     }
   } catch (e) {
     console.log(`  ⚠ Auto-detect Start date fallito (${e.message}). Uso: ${resolvedStartDateField}`);
@@ -351,6 +372,18 @@ async function main() {
   console.log('▶ Fetch issue da Jira...');
   const issues = await fetchAllIssues();
   console.log(`✓ ${issues.length} issue ricevute`);
+
+  // Diagnostica: stampa le date raw dei primi task per capire se la
+  // detection del campo Start date sta funzionando
+  const sample = issues.filter(it => it.fields?.issuetype?.name !== 'Epic').slice(0, 5);
+  if (sample.length) {
+    console.log(`▶ Esempio date (campo Start = ${resolvedStartDateField}):`);
+    sample.forEach(it => {
+      const f = it.fields || {};
+      const sRaw = f[resolvedStartDateField];
+      console.log(`    ${it.key.padEnd(12)} start=${JSON.stringify(sRaw) || 'null'}  due=${JSON.stringify(f.duedate) || 'null'}`);
+    });
+  }
 
   console.log('▶ Lettura stato Firestore...');
   const snap = await docRef.get();
