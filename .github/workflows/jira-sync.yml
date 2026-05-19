@@ -1,6 +1,8 @@
-name: Sync Jira → MY-GANTT
+name: Pull da Jira → MY-GANTT
 
-# Trigger MANUALE: vai su Actions → "Sync Jira → MY-GANTT" → "Run workflow"
+# Importa le issue da Jira e aggiorna Firestore.
+# NON pusha indietro le modifiche locali di date — per quello usa il
+# workflow "Push MY-GANTT → Jira".
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +13,7 @@ on:
         default: ''
 
 jobs:
-  sync:
+  pull:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -30,9 +32,10 @@ jobs:
         working-directory: scripts
         run: npm install --omit=dev --no-audit --no-fund
 
-      - name: Run Jira sync
+      - name: Pull issue da Jira
         working-directory: scripts
         env:
+          SYNC_DIRECTION:            pull
           JIRA_DOMAIN:               ${{ secrets.JIRA_DOMAIN }}
           JIRA_EMAIL:                ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN:            ${{ secrets.JIRA_API_TOKEN }}

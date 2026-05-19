@@ -423,22 +423,49 @@ async function main() {
   console.log(`  Domain: ${JIRA_DOMAIN}`);
   console.log(`  Project: ${projectKey}`);
 
+  // Modalità del run: pull = solo Jira→MY-GANTT, push = solo MY-GANTT→Jira,
+  // both = entrambe (default per retro-compatibilità).
+  const DIRECTION = (process.env.SYNC_DIRECTION || 'both').toLowerCase();
+  console.log(`  Modalità: ${DIRECTION}`);
+
   console.log('▶ Rilevo campo Start date...');
   await autoDetectStartDateField();
 
-  // Step 1: leggi lo stato corrente da Firestore. Serve per detection dei
-  // delta locali (date modificate in MY-GANTT che vanno re-pushate su Jira).
-  console.log('▶ Lettura stato Firestore (pre-push)...');
+  console.log('▶ Lettura stato Firestore...');
   const snapPre = await docRef.get();
   const statoPre = snapPre.exists ? snapPre.data() : null;
 
-  // Step 2: pusha le modifiche locali di start/end verso Jira (solo dei
-  // task che hanno t.inizio/t.fine diversi dallo snapshot jiraSyncedX).
-  if (statoPre && Array.isArray(statoPre.task)) {
+  // ===== MODALITÀ PUSH =====
+  // Solo invio le modifiche locali di start/end a Jira. Riallinea anche
+  // jiraSyncedX dopo il push (così detection delta riparte da zero).
+  if (DIRECTION === 'push') {
+    if (!statoPre || !Array.isArray(statoPre.task)) {
+      console.log('  Niente da pushare: Firestore vuoto.');
+      return;
+    }
+    const { ok } = await pushModificheDate(statoPre);
+    if (ok > 0) {
+      // Aggiorna jiraSyncedInizio/Fine sui task pushati così la prossima
+      // detection delta non li ri-rileva.
+      statoPre.task.forEach(t => {
+        if (!t.jiraKey || t.tipo !== 'task') return;
+        if (t.inizio && t.inizio !== t.jiraSyncedInizio) t.jiraSyncedInizio = t.inizio;
+        if (t.fine   && t.fine   !== t.jiraSyncedFine)   t.jiraSyncedFine   = t.fine;
+      });
+      console.log('▶ Aggiorno snapshot jiraSyncedX su Firestore...');
+      await docRef.set(statoPre);
+    }
+    return; // niente fetch, niente merge
+  }
+
+  // ===== MODALITÀ BOTH (legacy) =====
+  // Spinge le modifiche locali PRIMA del fetch (così il fetch include
+  // anche le nostre modifiche appena scritte).
+  if (DIRECTION === 'both' && statoPre && Array.isArray(statoPre.task)) {
     await pushModificheDate(statoPre);
   }
 
-  // Step 3: fetch fresco da Jira (ora include eventuali nostre modifiche).
+  // ===== MODALITÀ PULL / BOTH: fetch da Jira =====
   console.log('▶ Fetch issue da Jira...');
   const issues = await fetchAllIssues();
   console.log(`✓ ${issues.length} issue ricevute`);

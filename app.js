@@ -107,9 +107,14 @@ function inizializzaAuth() {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
 
-  // Click "Sincronizza con Jira" → apri la pagina del workflow GitHub Actions
-  document.getElementById('btn-sync-jira')?.addEventListener('click', () => {
+  // Click "Pull da Jira" → apri il workflow Pull su GitHub Actions
+  document.getElementById('btn-pull-jira')?.addEventListener('click', () => {
     const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-sync.yml';
+    window.open(url, '_blank', 'noopener');
+  });
+  // Click "Push MY-GANTT → Jira" → apri il workflow Push
+  document.getElementById('btn-push-jira')?.addEventListener('click', () => {
+    const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-push.yml';
     window.open(url, '_blank', 'noopener');
   });
 

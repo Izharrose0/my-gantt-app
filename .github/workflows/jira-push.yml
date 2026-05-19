@@ -1,0 +1,40 @@
+name: Push MY-GANTT → Jira
+
+# Manda a Jira le modifiche locali di Start date / Due date fatte in
+# MY-GANTT (drag su Gantt o Workload). NON modifica nient'altro su Jira:
+# i campi nome, ore, assegnatari, stato restano come sono in Jira.
+# Dopo il push fa anche un fetch per riallineare gli snapshot di sync.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Push date a Jira
+        working-directory: scripts
+        env:
+          SYNC_DIRECTION:           push
+          JIRA_DOMAIN:              ${{ secrets.JIRA_DOMAIN }}
+          JIRA_EMAIL:               ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN:           ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY:         ${{ secrets.JIRA_PROJECT_KEY }}
+          JIRA_START_DATE_FIELD:    ${{ secrets.JIRA_START_DATE_FIELD }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node jira-sync.mjs
