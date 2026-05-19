@@ -882,8 +882,8 @@ input:focus, select:focus {
   white-space: nowrap;
   font-size: 0.72rem;
   font-weight: 600;
-  color: #1e293b;
-  background: rgba(255,255,255,0.92);
+  color: #ffffff;
+  background: var(--color-primary, #5e6ad2);
   padding: 2px 8px;
   border-radius: 4px;
   pointer-events: none;
@@ -891,7 +891,7 @@ input:focus, select:focus {
   height: 20px;
   display: inline-flex;
   align-items: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(94, 106, 210, 0.4);
 }
 
 /* --- Barra progresso epica --- */
@@ -2307,13 +2307,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .gantt-header { z-index: 20 !important; }
   .gantt-today-line, .wl-today-line { z-index: 3 !important; }
   .gantt-milestone { z-index: 2 !important; }
-  /* Milestone label leggibile su sfondo scuro */
+  /* Milestone label viola con testo bianco (coerente con desktop) */
   .gantt-milestone-label {
-    background: rgba(15, 17, 23, 0.95) !important;
+    background: var(--color-primary, #5e6ad2) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: none;
     padding: 2px 8px !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    box-shadow: 0 2px 6px rgba(94, 106, 210, 0.45);
   }
   /* Nascondo i bottoni bottom-bar specifici della timeline se non siamo in Gantt/Workload */
   body:not([data-active-tab="gantt"]):not([data-active-tab="workload"]) .bb-chart-only {
