@@ -3613,7 +3613,8 @@ function renderEisenhower() {
     return `
       <div class="eisen-card stato-${statoVis}${isEpica ? ' eisen-card-epica' : ''}"
            data-id="${t.id}"
-           title="${escapeHtml(t.nome)} · ${statoVis} · Importanza ${imp} · Urgenza ${urg}">
+           draggable="true"
+           title="${escapeHtml(t.nome)} · ${statoVis} · Importanza ${imp} · Urgenza ${urg} (trascina per spostare)">
         <span class="eisen-card-name">${escapeHtml(t.nome)}</span>
         ${avatars || extra ? `<span class="avatar-group">${avatars}${extra}</span>` : ''}
       </div>`;
@@ -3677,6 +3678,56 @@ function renderEisenhower() {
   // Click card → apre il modal di modifica
   container.querySelectorAll('.eisen-card').forEach(el => {
     el.addEventListener('click', () => apriModaleTask(el.dataset.id));
+  });
+
+  // Drag-and-drop: trascina una card su un'altra cella per cambiarle
+  // importanza/urgenza in base alle coordinate della cella di destinazione
+  if (isOwner()) {
+    abilitaDragEisen(container);
+  }
+}
+
+function abilitaDragEisen(container) {
+  let draggingId = null;
+
+  container.querySelectorAll('.eisen-card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      draggingId = card.dataset.id;
+      card.classList.add('dragging');
+      try { e.dataTransfer.setData('text/plain', draggingId); } catch {}
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      draggingId = null;
+      container.querySelectorAll('.eisen-cell.drag-over')
+        .forEach(c => c.classList.remove('drag-over'));
+    });
+  });
+
+  container.querySelectorAll('.eisen-cell').forEach(cell => {
+    cell.addEventListener('dragover', e => {
+      if (!draggingId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      cell.classList.add('drag-over');
+    });
+    cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+    cell.addEventListener('drop', e => {
+      e.preventDefault();
+      cell.classList.remove('drag-over');
+      const id = draggingId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+      if (!id) return;
+      const t = stato.task.find(x => x.id === id);
+      if (!t) return;
+      const newImp = clampEisen(cell.dataset.imp, t.importanza);
+      const newUrg = clampEisen(cell.dataset.urg, t.urgenza);
+      if (t.importanza === newImp && t.urgenza === newUrg) return;
+      t.importanza = newImp;
+      t.urgenza    = newUrg;
+      salvaStato();
+      aggiornaViste();
+    });
   });
 }
 

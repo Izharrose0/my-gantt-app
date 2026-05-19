@@ -2998,6 +2998,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .eisen-card .avatar-group { flex-shrink: 0; }
 
+/* Drag-and-drop nella matrice */
+.eisen-card { cursor: grab; }
+.eisen-card:active { cursor: grabbing; }
+body[data-role="viewer"] .eisen-card { cursor: pointer; }
+.eisen-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.97);
+}
+.eisen-cell.drag-over {
+  outline: 2px dashed var(--color-primary, #5e6ad2);
+  outline-offset: -3px;
+  background: rgba(94, 106, 210, 0.18) !important;
+}
+
 .eisen-legend {
   grid-area: legend;
   display: flex;
