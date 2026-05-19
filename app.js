@@ -3680,22 +3680,27 @@ function renderEisenhower() {
     el.addEventListener('click', () => apriModaleTask(el.dataset.id));
   });
 
-  // Drag-and-drop: trascina una card su un'altra cella per cambiarle
-  // importanza/urgenza in base alle coordinate della cella di destinazione
-  if (isOwner()) {
-    abilitaDragEisen(container);
-  }
+  // Drag-and-drop: sempre attivo, il drop fa nulla per i viewer
+  abilitaDragEisen(container);
 }
 
 function abilitaDragEisen(container) {
   let draggingId = null;
+  const cards = container.querySelectorAll('.eisen-card');
+  const cells = container.querySelectorAll('.eisen-cell');
+  console.log('[eisen-dnd] setup:', cards.length, 'cards', cells.length, 'cells');
 
-  container.querySelectorAll('.eisen-card').forEach(card => {
+  cards.forEach(card => {
+    card.setAttribute('draggable', 'true');
     card.addEventListener('dragstart', e => {
+      if (!isOwner()) { e.preventDefault(); return; }
       draggingId = card.dataset.id;
       card.classList.add('dragging');
-      try { e.dataTransfer.setData('text/plain', draggingId); } catch {}
-      e.dataTransfer.effectAllowed = 'move';
+      try {
+        e.dataTransfer.setData('text/plain', draggingId);
+        e.dataTransfer.effectAllowed = 'move';
+      } catch (err) { console.warn('[eisen-dnd] setData fallita:', err); }
+      console.log('[eisen-dnd] dragstart', card.dataset.id);
     });
     card.addEventListener('dragend', () => {
       card.classList.remove('dragging');
@@ -3705,21 +3710,34 @@ function abilitaDragEisen(container) {
     });
   });
 
-  container.querySelectorAll('.eisen-cell').forEach(cell => {
+  cells.forEach(cell => {
+    // dragenter è importante per alcuni browser (Firefox specialmente):
+    // serve sia preventDefault qui, sia su dragover, per accettare il drop
+    cell.addEventListener('dragenter', e => {
+      if (!draggingId) return;
+      e.preventDefault();
+      cell.classList.add('drag-over');
+    });
     cell.addEventListener('dragover', e => {
       if (!draggingId) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      try { e.dataTransfer.dropEffect = 'move'; } catch {}
       cell.classList.add('drag-over');
     });
-    cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+    cell.addEventListener('dragleave', e => {
+      // dragleave fire anche entrando in figli: rimuoviamo solo se usciamo davvero
+      if (e.relatedTarget && cell.contains(e.relatedTarget)) return;
+      cell.classList.remove('drag-over');
+    });
     cell.addEventListener('drop', e => {
       e.preventDefault();
       cell.classList.remove('drag-over');
       const id = draggingId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+      console.log('[eisen-dnd] drop', id, '→ imp=', cell.dataset.imp, 'urg=', cell.dataset.urg);
       if (!id) return;
       const t = stato.task.find(x => x.id === id);
       if (!t) return;
+      if (!isOwner()) return;
       const newImp = clampEisen(cell.dataset.imp, t.importanza);
       const newUrg = clampEisen(cell.dataset.urg, t.urgenza);
       if (t.importanza === newImp && t.urgenza === newUrg) return;
