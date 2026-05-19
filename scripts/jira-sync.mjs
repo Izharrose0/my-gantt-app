@@ -67,11 +67,17 @@ const docRef = db.collection('workspaces').doc('main');
 // che e' gia' supportato.
 const EPIC_LINK_FIELD = 'customfield_10014';
 
-const JIRA_FIELDS = [
-  'summary', 'status', 'issuetype', 'parent', 'assignee',
-  'duedate', 'created', 'timetracking', 'priority', 'labels',
-  startDateField, EPIC_LINK_FIELD
-];
+// Risolto a runtime via /rest/api/3/field (auto-detection). Inizializzato
+// con il valore env (se settato) o il default.
+let resolvedStartDateField = startDateField;
+
+function jiraFields() {
+  return [
+    'summary', 'status', 'issuetype', 'parent', 'assignee',
+    'duedate', 'created', 'timetracking', 'priority', 'labels',
+    resolvedStartDateField, EPIC_LINK_FIELD
+  ];
+}
 
 async function jiraRequest(path, { method = 'GET', body } = {}) {
   const auth = Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64');
@@ -104,6 +110,45 @@ async function jiraRequest(path, { method = 'GET', body } = {}) {
   return resp.json();
 }
 
+// Trova il customfield che rappresenta la "Start date" interrogando i
+// metadati Jira. Cerca per nome ("Start date" / "Data inizio") e fallisce
+// in modo silenzioso lasciando il default.
+async function autoDetectStartDateField() {
+  // Se l'utente ha forzato un campo via env var, rispettalo
+  if (process.env.JIRA_START_DATE_FIELD) {
+    console.log(`  Start date field: ${resolvedStartDateField} (forzato da env)`);
+    return;
+  }
+  try {
+    const fields = await jiraRequest('/rest/api/3/field');
+    const candidates = [
+      'Start date',
+      'Start Date',
+      'Data inizio',
+      'Data di inizio',
+      'startDate',
+      'Target start'
+    ].map(s => s.toLowerCase());
+    const match = fields.find(f =>
+      candidates.includes((f.name || '').toLowerCase())
+      && f.id && f.id.startsWith('customfield_')
+    );
+    if (match) {
+      resolvedStartDateField = match.id;
+      console.log(`  Start date field: ${match.id} ("${match.name}") — auto-rilevato`);
+    } else {
+      console.log(`  ⚠ Nessun campo "Start date" trovato nei metadati Jira. Uso default: ${resolvedStartDateField}`);
+      console.log(`    Custom field disponibili in questa istanza:`);
+      fields
+        .filter(f => f.id?.startsWith('customfield_'))
+        .slice(0, 30)
+        .forEach(f => console.log(`      ${f.id}  →  "${f.name}"`));
+    }
+  } catch (e) {
+    console.log(`  ⚠ Auto-detect Start date fallito (${e.message}). Uso: ${resolvedStartDateField}`);
+  }
+}
+
 // Usa il nuovo endpoint /rest/api/3/search/jql (l'API legacy /search è
 // stata rimossa da Atlassian — CHANGE-2046). Paginazione a cursore con
 // nextPageToken invece di startAt/total.
@@ -116,7 +161,7 @@ async function fetchAllIssues() {
   while (true) {
     const body = {
       jql,
-      fields: JIRA_FIELDS,
+      fields: jiraFields(),
       maxResults: PAGE_SIZE
     };
     if (nextPageToken) body.nextPageToken = nextPageToken;
@@ -197,12 +242,16 @@ function buildTask(issue, existing, nextOrdine) {
   const orig = Number(f.timetracking?.originalEstimateSeconds || 0);
   const stimaOre = arrotondaOreA05(orig / 3600);
   // Date: per le epiche lasciamo vuote (frontend le calcola dai figli).
-  // Per i task: start = Start date Jira o data creazione; end = Due date Jira;
-  // poi auto-correzione in base alle ore stimate (8h/giorno).
+  // Per i task: start = Start date Jira (campo auto-rilevato); end = Due date.
+  // NON usiamo piu' f.created come fallback: e' fuorviante perche' la data
+  // creazione spesso non coincide con la start date pianificata.
   let start = null;
   let due = null;
   if (!isEpic) {
-    start = f[startDateField] || (f.created || '').slice(0, 10) || null;
+    const startRaw = f[resolvedStartDateField];
+    // Il campo puo' essere una stringa "2026-05-15" o un timestamp ISO completo;
+    // teniamo solo la parte data.
+    start = typeof startRaw === 'string' ? startRaw.slice(0, 10) : null;
     due   = f.duedate || null;
     const corrette = autoCorreggiDate(start, due, stimaOre);
     start = corrette.inizio;
@@ -301,7 +350,9 @@ async function main() {
   console.log(`▶ Sync Jira → Firestore`);
   console.log(`  Domain: ${JIRA_DOMAIN}`);
   console.log(`  Project: ${projectKey}`);
-  console.log(`  Start-date field: ${startDateField}`);
+
+  console.log('▶ Rilevo campo Start date...');
+  await autoDetectStartDateField();
 
   console.log('▶ Fetch issue da Jira...');
   const issues = await fetchAllIssues();
