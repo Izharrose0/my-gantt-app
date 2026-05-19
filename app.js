@@ -3162,7 +3162,8 @@ function renderWorkload() {
       return `<div class="wl-task-bar stato-${t.stato}"
                    style="left:${left}px; width:${width}px; top:${top}px"
                    data-id="${t.id}"
-                   title="${escapeHtml(tooltip)}">${escapeHtml(t.nome)}</div>`;
+                   title="${escapeHtml(tooltip)}"
+        ><span class="wl-task-handle handle-left" data-side="left"></span><span class="wl-task-label">${escapeHtml(t.nome)}</span><span class="wl-task-handle handle-right" data-side="right"></span></div>`;
     }).join('');
 
     // Heat strip giornaliero
@@ -3234,13 +3235,92 @@ function renderWorkload() {
     </div>
   `;
 
-  // Click su una mini-barra → apre il modal modifica task
-  container.querySelectorAll('.wl-task-bar').forEach(el => {
-    el.addEventListener('click', () => apriModaleTask(el.dataset.id));
-  });
+  // Drag delle wl-task-bar: move + resize-left + resize-right.
+  // Senza spostamenti → click = apri modale.
+  abilitaDragWorkload(dayW, minDate);
+
   // Click su una cella heat → apre il modal dettaglio giorno
   container.querySelectorAll('.wl-heat[data-persona][data-giorno]').forEach(el => {
     el.addEventListener('click', () => apriModaleGiorno(el.dataset.persona, el.dataset.giorno));
+  });
+}
+
+// Drag/resize delle barre nella tab Workload. Speculare a abilitaDragGantt.
+function abilitaDragWorkload(dayW, minDate) {
+  const container = document.getElementById('workload-container');
+  if (!container) return;
+  container.querySelectorAll('.wl-task-bar').forEach(bar => {
+    bar.addEventListener('mousedown', e => {
+      const side = e.target.dataset?.side; // 'left' | 'right' | undefined
+      const mode = side === 'left' ? 'resize-left'
+                 : side === 'right' ? 'resize-right'
+                 : 'move';
+
+      const id = bar.dataset.id;
+      const t = stato.task.find(x => x.id === id);
+      if (!t) return;
+      // Niente drag per task readonly (epiche/milestone), o se viewer
+      if (t.tipo === 'epica' || t.tipo === 'milestone') return;
+      if (!isOwner()) return;
+
+      const startX = e.clientX;
+      const startLeft = parseFloat(bar.style.left);
+      const startWidth = parseFloat(bar.style.width);
+      const inizioOriginale = t.inizio;
+      const fineOriginale   = t.fine;
+      let mosso = false;
+
+      e.preventDefault();
+      document.body.style.userSelect = 'none';
+      bar.classList.add('dragging');
+
+      function onMove(ev) {
+        const dx = ev.clientX - startX;
+        const dGiorni = Math.round(dx / dayW);
+        if (Math.abs(dx) > 3) mosso = true;
+        if (mode === 'move') {
+          bar.style.left = (startLeft + dGiorni * dayW) + 'px';
+        } else if (mode === 'resize-right') {
+          const newW = Math.max(dayW, startWidth + dGiorni * dayW);
+          bar.style.width = newW + 'px';
+        } else if (mode === 'resize-left') {
+          const newLeft = Math.min(startLeft + dGiorni * dayW, startLeft + startWidth - dayW);
+          const newW = startWidth - (newLeft - startLeft);
+          bar.style.left = newLeft + 'px';
+          bar.style.width = newW + 'px';
+        }
+      }
+
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.userSelect = '';
+        bar.classList.remove('dragging');
+
+        if (!mosso) {
+          apriModaleTask(id);
+          return;
+        }
+        // Calcola nuove date in pixel → ISO
+        const finalLeft  = parseFloat(bar.style.left);
+        const finalWidth = parseFloat(bar.style.width);
+        const offsetInizio = Math.round(finalLeft / dayW);
+        const giorniDurata = Math.max(1, Math.round(finalWidth / dayW));
+        const nuovoInizio = new Date(minDate);
+        nuovoInizio.setDate(nuovoInizio.getDate() + offsetInizio);
+        const nuovaFine = new Date(nuovoInizio);
+        nuovaFine.setDate(nuovaFine.getDate() + giorniDurata - 1);
+
+        t.inizio = dataISO(nuovoInizio);
+        t.fine   = dataISO(nuovaFine);
+        if (t.inizio === inizioOriginale && t.fine === fineOriginale) return;
+        salvaStato();
+        aggiornaViste();
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
   });
 }
 

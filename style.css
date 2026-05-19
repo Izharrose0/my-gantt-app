@@ -1058,17 +1058,39 @@ input:focus, select:focus {
   position: absolute;
   height: 18px;
   border-radius: 3px;
-  padding: 0 0.4rem;
+  padding: 0;
   color: white;
   font-size: 0.7rem;
   line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
+  cursor: grab;
   opacity: 0.92;
   z-index: 1;
+  display: flex;
+  align-items: stretch;
 }
+.wl-task-bar.dragging { cursor: grabbing; opacity: 0.7; }
+.wl-task-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-task-handle {
+  flex: 0 0 5px;
+  cursor: ew-resize;
+  background: transparent;
+}
+.wl-task-handle.handle-left  { border-left:  2px solid transparent; }
+.wl-task-handle.handle-right { border-right: 2px solid transparent; }
+.wl-task-bar:hover .wl-task-handle {
+  background: rgba(255, 255, 255, 0.3);
+}
+/* Viewer non possono draggare */
+body[data-role="viewer"] .wl-task-bar { cursor: pointer; }
+body[data-role="viewer"] .wl-task-handle { display: none; }
 .wl-task-bar:hover { opacity: 1; }
 .wl-task-bar.stato-todo        { background: #94a3b8; }
 .wl-task-bar.stato-in-progress { background: #7c3aed; }
