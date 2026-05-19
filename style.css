@@ -2972,6 +2972,53 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .eisen-card .avatar-xs { width: 14px; height: 14px; font-size: 0.5rem; }
 }
 
+/* Associazione persone Jira ↔ MY-GANTT: modal */
+.assoc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+.assoc-row:last-child { border-bottom: none; }
+.assoc-persona {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.assoc-info { display: flex; flex-direction: column; min-width: 0; }
+.assoc-info strong { font-size: 0.9rem; }
+.assoc-info small {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  margin-top: 1px;
+}
+.assoc-info .assoc-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.assoc-azione {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.assoc-azione .assoc-target {
+  min-width: 180px;
+  max-width: 240px;
+}
+@media (max-width: 600px) {
+  .assoc-row { flex-direction: column; align-items: stretch; }
+  .assoc-azione { justify-content: stretch; }
+  .assoc-azione .assoc-target { flex: 1; min-width: 0; max-width: none; }
+}
+
 /* Visibilità epiche: modal "Gestisci visibilità" */
 .vis-row {
   padding: 0.5rem 0.7rem;

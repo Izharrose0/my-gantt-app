@@ -41,6 +41,7 @@
           </div>
           <button type="button" class="kebab-item only-owner" id="btn-sync-jira">Sincronizza con Jira →</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
+          <button type="button" class="kebab-item only-owner" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
           <div class="kebab-divider only-owner"></div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
           <label class="kebab-item only-owner">
@@ -505,6 +506,24 @@
         </div>
         <button type="submit" class="btn btn-primary">Salva modifiche</button>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL ASSOCIAZIONE PERSONE JIRA ↔ MY-GANTT =================== -->
+  <div id="modal-assoc-persone-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Associa persone Jira ↔ MY-GANTT</h3>
+        <button class="btn-close" id="btn-chiudi-modal-assoc-persone" type="button">×</button>
+      </header>
+      <p class="hint">
+        Se Jira ha creato una persona duplicata (es. "Lorenzo Guerrini" auto-creato accanto a quello già esistente),
+        puoi unirla a una esistente. I task vengono ricollegati e la duplicata viene rimossa.
+        <br>
+        Regole di merge: campi vuoti vengono riempiti dall'altra persona;
+        se entrambi hanno un valore, vince quello già presente in MY-GANTT (il "survivor").
+      </p>
+      <div id="lista-assoc-persone" class="lista"></div>
     </div>
   </div>
 

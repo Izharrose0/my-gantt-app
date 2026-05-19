@@ -118,6 +118,12 @@ function inizializzaAuth() {
   document.getElementById('btn-chiudi-modal-visibilita')?.addEventListener('click', () => {
     document.getElementById('modal-visibilita-overlay').classList.add('hidden');
   });
+
+  // Click "Associa persone Jira ↔ MY-GANTT" → apri modale
+  document.getElementById('btn-associa-persone')?.addEventListener('click', apriModaleAssocPersone);
+  document.getElementById('btn-chiudi-modal-assoc-persone')?.addEventListener('click', () => {
+    document.getElementById('modal-assoc-persone-overlay').classList.add('hidden');
+  });
   document.getElementById('btn-vis-tutti')?.addEventListener('click', () => setVisibilitaTutte(false));
   document.getElementById('btn-vis-nessuno')?.addEventListener('click', () => setVisibilitaTutte(true));
   document.getElementById('btn-vis-solo-jira')?.addEventListener('click', () => {
@@ -129,6 +135,129 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== ASSOCIAZIONE PERSONE JIRA ↔ MY-GANTT =====
+
+function apriModaleAssocPersone() {
+  renderListaAssocPersone();
+  document.getElementById('modal-assoc-persone-overlay').classList.remove('hidden');
+}
+
+function renderListaAssocPersone() {
+  const cont = document.getElementById('lista-assoc-persone');
+  if (!cont) return;
+  const persone = stato.persone.slice().sort((a, b) =>
+    (a.nome || '').localeCompare(b.nome || ''));
+  if (!persone.length) {
+    cont.innerHTML = '<li class="empty-state">Nessuna persona registrata.</li>';
+    return;
+  }
+  cont.innerHTML = persone.map(p => {
+    const taskCount = stato.task.filter(t =>
+      (t.assegnazioni || []).some(a => a.personaId === p.id)
+    ).length;
+    const daJira = p.jiraAccountId ? 'sì' : 'no';
+    const badge = p.jiraAccountId
+      ? `<span class="label-fte epica-badge" title="Account Jira: ${escapeHtml(p.jiraAccountId)}">Da Jira</span>`
+      : '<span class="label-fte" title="Creata manualmente">Manuale</span>';
+    const options = persone
+      .filter(x => x.id !== p.id)
+      .map(x => `<option value="${x.id}">${escapeHtml(x.nome)} ${x.jiraAccountId ? '(Jira)' : '(manuale)'}</option>`)
+      .join('');
+    return `
+      <li class="assoc-row">
+        <div class="assoc-persona">
+          ${avatar(p, 'md')}
+          <div class="assoc-info">
+            <strong>${escapeHtml(p.nome)}</strong>
+            <small>${escapeHtml(p.ruolo || '')}${p.email ? ' · ' + escapeHtml(p.email) : ''}</small>
+            <small class="assoc-meta">${badge} · Da Jira: ${daJira} · ${taskCount} task assegnati</small>
+          </div>
+        </div>
+        <div class="assoc-azione">
+          <label class="hint" style="font-size:0.7rem">Unisci in →</label>
+          <select class="assoc-target" data-from-id="${p.id}">
+            <option value="">— scegli persona —</option>
+            ${options}
+          </select>
+          <button class="btn btn-secondary btn-sm assoc-confirm" data-from-id="${p.id}" disabled>Unisci</button>
+        </div>
+      </li>`;
+  }).join('');
+
+  cont.querySelectorAll('.assoc-target').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const btn = cont.querySelector(`.assoc-confirm[data-from-id="${sel.dataset.fromId}"]`);
+      if (btn) btn.disabled = !sel.value;
+    });
+  });
+  cont.querySelectorAll('.assoc-confirm').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fromId = btn.dataset.fromId;
+      const sel = cont.querySelector(`.assoc-target[data-from-id="${fromId}"]`);
+      const toId = sel?.value;
+      if (!toId || toId === fromId) return;
+      const from = trovaPersona(fromId);
+      const to   = trovaPersona(toId);
+      if (!from || !to) return;
+      if (!confirm(`Unire "${from.nome}" dentro "${to.nome}"?\n\nI ${stato.task.filter(t => (t.assegnazioni || []).some(a => a.personaId === fromId)).length} task assegnati verranno spostati su "${to.nome}".\n"${from.nome}" verrà eliminata.`)) return;
+      unisciPersone(fromId, toId);
+      renderListaAssocPersone();
+    });
+  });
+}
+
+// Unisce la persona `fromId` (verrà rimossa) dentro `toId` (sopravvive).
+// Regola: campi vuoti del survivor vengono riempiti dal merged; se entrambi
+// hanno un valore, vince il survivor (MY-GANTT prevale su Jira/duplicato).
+function unisciPersone(fromId, toId) {
+  if (fromId === toId) return;
+  const from = stato.persone.find(p => p.id === fromId);
+  const to   = stato.persone.find(p => p.id === toId);
+  if (!from || !to) return;
+
+  // 1. Merge dei campi: vince il survivor (to), riempiamo solo i suoi vuoti
+  const fillIfEmpty = (k) => {
+    if ((to[k] === undefined || to[k] === null || to[k] === '' ||
+         (typeof to[k] === 'number' && !to[k])) && from[k] !== undefined && from[k] !== null && from[k] !== '') {
+      to[k] = from[k];
+    }
+  };
+  fillIfEmpty('email');
+  fillIfEmpty('jiraAccountId');
+  fillIfEmpty('ruolo');
+  fillIfEmpty('costoOrario');
+  // Ferie: union (entrambi possono aver registrato assenze valide)
+  const ferieTo   = Array.isArray(to.ferie)   ? to.ferie   : [];
+  const ferieFrom = Array.isArray(from.ferie) ? from.ferie : [];
+  const ferieMap = new Map();
+  [...ferieTo, ...ferieFrom].forEach(f => {
+    if (f && f.inizio && f.fine) ferieMap.set(`${f.inizio}|${f.fine}`, f);
+  });
+  to.ferie = Array.from(ferieMap.values());
+
+  // 2. Ricolloca tutti i riferimenti nelle assegnazioni task
+  stato.task.forEach(t => {
+    if (!Array.isArray(t.assegnazioni)) return;
+    // Trova se il task era assegnato a entrambi: somma gli effort, deduplica
+    const fromIdx = t.assegnazioni.findIndex(a => a.personaId === fromId);
+    if (fromIdx === -1) return;
+    const fromEffort = Number(t.assegnazioni[fromIdx].effort) || 0;
+    const toAss = t.assegnazioni.find(a => a.personaId === toId);
+    if (toAss) {
+      toAss.effort = Math.min(100, (Number(toAss.effort) || 0) + fromEffort);
+      t.assegnazioni.splice(fromIdx, 1);
+    } else {
+      t.assegnazioni[fromIdx].personaId = toId;
+    }
+  });
+
+  // 3. Rimuovi la persona "from"
+  stato.persone = stato.persone.filter(p => p.id !== fromId);
+
+  salvaStato();
+  aggiornaViste();
 }
 
 // ===== GESTIONE VISIBILITÀ EPICHE =====
