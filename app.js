@@ -1285,27 +1285,48 @@ function percCompletamento(taskOrStato) {
   return 0;
 }
 
-// Aggrega ricorsivamente i dati di un'epica dai suoi discendenti foglia
+// True se un nodo ha dati propri (stima, date o assegnazioni). Usato per
+// fermare la ricorsione quando un nodo intermedio "conta" — caso tipico
+// delle Story Jira che portano le ore mentre i sub-task sono breakdown vuoto.
+function nodoHaDatiPropri(t) {
+  if ((Number(t.stimaOre) || 0) > 0) return true;
+  if (t.inizio || t.fine) return true;
+  if (Array.isArray(t.assegnazioni) && t.assegnazioni.length > 0) return true;
+  return false;
+}
+
+// Aggrega ricorsivamente i dati di un'epica.
+// Strategia: cammina nei figli, ma se un figlio ha dati propri (stima/date/
+// assegnazioni) lo tratta come "foglia di calcolo" e NON scende nei suoi
+// sub-task. Questo riflette la convenzione Jira (Story con ore, sub-task vuoti).
 function aggregaEpica(t) {
   const foglie = [];
-  function raccogli(id) {
+  function raccogli(id, isRoot) {
+    const node = stato.task.find(x => x.id === id);
+    if (!node) return;
+    // Sul root (l'epica stessa) NON ci fermiamo mai: scendiamo sempre nei figli
+    if (!isRoot && nodoHaDatiPropri(node)) {
+      foglie.push(node);
+      return;
+    }
     const figli = figliDi(id);
     if (!figli.length) {
-      const self = stato.task.find(x => x.id === id);
-      if (self) foglie.push(self);
-    } else {
-      figli.forEach(f => raccogli(f.id));
+      if (!isRoot) foglie.push(node);
+      return;
     }
+    figli.forEach(f => raccogli(f.id, false));
   }
-  raccogli(t.id);
+  raccogli(t.id, true);
 
   if (!foglie.length) {
     return { inizio: t.inizio, fine: t.fine, stimaOre: 0, oreAllocate: 0,
              stato: 'todo', completamento: 0, costoTotale: 0 };
   }
 
-  const inizio = foglie.map(f => f.inizio).filter(Boolean).sort()[0];
-  const fine = foglie.map(f => f.fine).filter(Boolean).sort().reverse()[0];
+  // Fallback su t.inizio/t.fine quando NESSUNA foglia ha date (es. tutti
+  // sub-task vuoti) ma l'epica/story stessa ha date proprie da Jira.
+  const inizio = foglie.map(f => f.inizio).filter(Boolean).sort()[0] || t.inizio;
+  const fine = foglie.map(f => f.fine).filter(Boolean).sort().reverse()[0] || t.fine;
   // Solo i task contribuiscono alle ore (le milestone hanno 0)
   const stimaOre = foglie.reduce((s, f) => s + (Number(f.stimaOre) || 0), 0);
   const oreAllocate = foglie.reduce((s, f) => s + effortAllocato(f), 0);
@@ -3663,32 +3684,40 @@ function renderEisenhower() {
 // descendant). Restituisce un array ordinato per ore desc.
 function aggregazioniEpica(epica) {
   const acc = new Map(); // personaId → { persona, ore, costo, taskCount, effortSum }
-  function walk(id) {
+  function applica(leaf) {
+    if (!leaf || leaf.tipo === 'milestone') return;
+    const stima = Number(leaf.stimaOre) || 0;
+    (leaf.assegnazioni || []).forEach(a => {
+      const p = trovaPersona(a.personaId);
+      if (!p) return;
+      const effort = Number(a.effort) || 0;
+      const ore = stima * effort / 100;
+      const tariffa = Number(p.costoOrario) || 0;
+      const entry = acc.get(p.id) || {
+        persona: p, ore: 0, costo: 0, taskCount: 0, effortSum: 0
+      };
+      entry.ore       += ore;
+      entry.costo     += ore * tariffa;
+      entry.taskCount += 1;
+      entry.effortSum += effort;
+      acc.set(p.id, entry);
+    });
+  }
+  function walk(id, isRoot) {
+    const node = stato.task.find(x => x.id === id);
+    if (!node) return;
+    if (!isRoot && nodoHaDatiPropri(node)) {
+      applica(node);
+      return;
+    }
     const figli = stato.task.filter(x => x.parentId === id);
     if (!figli.length) {
-      const leaf = stato.task.find(x => x.id === id);
-      if (!leaf || leaf.tipo === 'milestone') return;
-      const stima = Number(leaf.stimaOre) || 0;
-      (leaf.assegnazioni || []).forEach(a => {
-        const p = trovaPersona(a.personaId);
-        if (!p) return;
-        const effort = Number(a.effort) || 0;
-        const ore = stima * effort / 100;
-        const tariffa = Number(p.costoOrario) || 0;
-        const entry = acc.get(p.id) || {
-          persona: p, ore: 0, costo: 0, taskCount: 0, effortSum: 0
-        };
-        entry.ore       += ore;
-        entry.costo     += ore * tariffa;
-        entry.taskCount += 1;
-        entry.effortSum += effort;
-        acc.set(p.id, entry);
-      });
-    } else {
-      figli.forEach(f => walk(f.id));
+      if (!isRoot) applica(node);
+      return;
     }
+    figli.forEach(f => walk(f.id, false));
   }
-  walk(epica.id);
+  walk(epica.id, true);
   return Array.from(acc.values()).sort((a, b) => b.ore - a.ore);
 }
 
@@ -3729,23 +3758,35 @@ function renderEpicaRiepilogo(epica) {
   `;
 }
 
-// Raccogli persone uniche assegnate a un'epica (via discendenti foglia)
+// Raccogli persone uniche assegnate a un'epica (stessa logica di
+// nodoHaDatiPropri: fermati ai nodi intermedi che hanno assegnazioni proprie)
 function raccogliAssegnatariEpica(epica) {
   const visti = new Set();
   const out = [];
-  function walk(id) {
+  function applica(node) {
+    if (!node) return;
+    (node.assegnazioni || []).forEach(a => {
+      if (visti.has(a.personaId)) return;
+      visti.add(a.personaId);
+      const p = trovaPersona(a.personaId);
+      if (p) out.push(p);
+    });
+  }
+  function walk(id, isRoot) {
+    const node = stato.task.find(x => x.id === id);
+    if (!node) return;
+    if (!isRoot && nodoHaDatiPropri(node)) {
+      applica(node);
+      return;
+    }
     const figli = stato.task.filter(x => x.parentId === id);
     if (!figli.length) {
-      const self = stato.task.find(x => x.id === id);
-      if (self) (self.assegnazioni || []).forEach(a => {
-        if (visti.has(a.personaId)) return;
-        visti.add(a.personaId);
-        const p = trovaPersona(a.personaId);
-        if (p) out.push(p);
-      });
-    } else figli.forEach(f => walk(f.id));
+      if (!isRoot) applica(node);
+      return;
+    }
+    figli.forEach(f => walk(f.id, false));
   }
-  walk(epica.id);
+  walk(epica.id, true);
   return out;
 }
 
