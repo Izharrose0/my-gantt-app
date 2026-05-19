@@ -107,16 +107,12 @@ function inizializzaAuth() {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
 
-  // Click "Pull da Jira" → apri il workflow Pull su GitHub Actions
-  document.getElementById('btn-pull-jira')?.addEventListener('click', () => {
-    const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-sync.yml';
-    window.open(url, '_blank', 'noopener');
-  });
-  // Click "Push MY-GANTT → Jira" → apri il workflow Push
-  document.getElementById('btn-push-jira')?.addEventListener('click', () => {
-    const url = 'https://github.com/Izharrose0/my-gantt-app/actions/workflows/jira-push.yml';
-    window.open(url, '_blank', 'noopener');
-  });
+  // Click "Pull da Jira" → triggera il workflow via API e monitora lo stato
+  document.getElementById('btn-pull-jira')?.addEventListener('click', () =>
+    triggeraWorkflow('jira-sync.yml', 'Pull da Jira'));
+  // Click "Push MY-GANTT → Jira" → triggera il workflow Push
+  document.getElementById('btn-push-jira')?.addEventListener('click', () =>
+    triggeraWorkflow('jira-push.yml', 'Push verso Jira'));
 
   // Click "Gestisci visibilità epiche" → apri modale
   document.getElementById('btn-gestisci-visibilita')?.addEventListener('click', apriModaleVisibilita);
@@ -140,6 +136,138 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== TRIGGER WORKFLOW GITHUB ACTIONS DA APP =====
+
+const GH_REPO = 'Izharrose0/my-gantt-app';
+const GH_PAT_KEY = 'gantt-app-github-pat';
+
+function chiediPatSeMancante() {
+  let pat = (localStorage.getItem(GH_PAT_KEY) || '').trim();
+  if (pat) return pat;
+  const msg =
+    'Per avviare i workflow direttamente dall\'app serve un GitHub Personal Access Token.\n\n' +
+    'Crealo qui (link aperto in pagina separata):\n' +
+    'https://github.com/settings/tokens/new\n\n' +
+    'Scope necessario: "workflow" (classic) oppure Actions:read+write (fine-grained).\n\n' +
+    'Il token resta SOLO nel tuo browser (localStorage). Premi Annulla per usare il fallback (apre la pagina di GitHub Actions).';
+  pat = window.prompt(msg, '');
+  if (!pat) return null;
+  pat = pat.trim();
+  localStorage.setItem(GH_PAT_KEY, pat);
+  return pat;
+}
+
+async function ghApi(path, opts = {}) {
+  const pat = localStorage.getItem(GH_PAT_KEY);
+  return fetch(`https://api.github.com${path}`, {
+    ...opts,
+    headers: {
+      'Authorization': `Bearer ${pat}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(opts.headers || {})
+    }
+  });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function triggeraWorkflow(workflowFile, label) {
+  const pat = chiediPatSeMancante();
+  if (!pat) {
+    // Fallback: apri la pagina di GitHub Actions in un'altra tab
+    const slug = workflowFile.replace(/\.[^.]+$/, '');
+    window.open(`https://github.com/${GH_REPO}/actions/workflows/${workflowFile}`, '_blank', 'noopener');
+    return;
+  }
+
+  mostraRunBanner(`▶ Avvio "${label}"…`, 'running');
+  const triggerTime = new Date(Date.now() - 5000); // 5s di tolleranza
+
+  try {
+    // 1. Dispatch
+    const dispatchRes = await ghApi(
+      `/repos/${GH_REPO}/actions/workflows/${workflowFile}/dispatches`,
+      { method: 'POST', body: JSON.stringify({ ref: 'main' }) }
+    );
+    if (dispatchRes.status === 401 || dispatchRes.status === 403) {
+      localStorage.removeItem(GH_PAT_KEY);
+      mostraRunBanner('❌ Token non valido o senza permessi. Riprova: il prompt te lo richiederà.', 'error');
+      return;
+    }
+    if (!dispatchRes.ok) {
+      const text = await dispatchRes.text().catch(() => '');
+      mostraRunBanner(`❌ Dispatch fallito (${dispatchRes.status}): ${text.slice(0, 100)}`, 'error');
+      return;
+    }
+
+    // 2. Aspetta che il run appaia nell'elenco
+    let runId = null, htmlUrl = null;
+    for (let i = 0; i < 12; i++) {
+      await sleep(2000);
+      const r = await ghApi(`/repos/${GH_REPO}/actions/workflows/${workflowFile}/runs?per_page=5`);
+      if (!r.ok) continue;
+      const data = await r.json();
+      const recente = (data.workflow_runs || []).find(x =>
+        x.event === 'workflow_dispatch' && new Date(x.created_at) >= triggerTime
+      );
+      if (recente) { runId = recente.id; htmlUrl = recente.html_url; break; }
+      mostraRunBanner(`▶ "${label}" — attendo che il runner avvii il job…`, 'running');
+    }
+    if (!runId) {
+      mostraRunBanner('⚠ Run avviato ma non rilevato. Controlla manualmente su Actions.', 'error');
+      return;
+    }
+
+    // 3. Polling stato
+    while (true) {
+      const r = await ghApi(`/repos/${GH_REPO}/actions/runs/${runId}`);
+      if (!r.ok) { mostraRunBanner('⚠ Errore lettura stato run', 'error', htmlUrl); return; }
+      const data = await r.json();
+      const status = data.status;          // queued | in_progress | completed
+      const conclusion = data.conclusion;  // success | failure | cancelled | null
+
+      if (status === 'completed') {
+        if (conclusion === 'success') {
+          mostraRunBanner(`✅ "${label}" completato`, 'success', htmlUrl);
+        } else {
+          mostraRunBanner(`❌ "${label}" terminato: ${conclusion}`, 'error', htmlUrl);
+        }
+        return;
+      }
+      const labelStato = status === 'queued' ? 'in coda' : 'in esecuzione';
+      mostraRunBanner(`▶ "${label}" — ${labelStato}…`, 'running', htmlUrl);
+      await sleep(3000);
+    }
+  } catch (e) {
+    mostraRunBanner(`💥 Errore: ${e.message}`, 'error');
+  }
+}
+
+function mostraRunBanner(msg, tipo, url) {
+  let el = document.getElementById('run-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'run-banner';
+    document.body.appendChild(el);
+  }
+  el.className = `run-banner run-banner-${tipo}`;
+  const linkHtml = url
+    ? `<a href="${url}" target="_blank" rel="noopener">apri log →</a>`
+    : '';
+  el.innerHTML = `
+    <span class="run-banner-msg">${msg}</span>
+    ${linkHtml}
+    <button type="button" class="run-banner-close" aria-label="Chiudi">×</button>
+  `;
+  el.querySelector('.run-banner-close').addEventListener('click', () => el.remove());
+  // Auto-rimozione dopo 8s solo per success/error
+  if (tipo !== 'running') {
+    clearTimeout(el._autoCloseTimer);
+    el._autoCloseTimer = setTimeout(() => el.remove(), 12000);
+  }
 }
 
 // ===== ASSOCIAZIONE PERSONE JIRA ↔ MY-GANTT =====
