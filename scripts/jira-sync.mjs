@@ -149,6 +149,46 @@ function arrotondaOreA05(ore) {
   return Math.round(ore * 2) / 2;
 }
 
+// Aggiunge N giorni di calendario a una data ISO (YYYY-MM-DD).
+function aggiungiGiorni(isoDate, n) {
+  if (!isoDate) return isoDate;
+  const d = new Date(isoDate + 'T12:00:00Z'); // mezzogiorno UTC: evita DST/off-by-one
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Auto-correzione date in base alle ore stimate.
+// Regola: 8h/giorno calendario. needed = ceil(stimaOre / 8).
+//   - Se manca solo l'inizio → inizio = fine - needed
+//   - Se manca solo la fine  → fine  = inizio + needed
+//   - Se entrambi presenti   → fine = max(fine, inizio + needed)
+//                              (l'inizio non viene mai modificato se gia' valido)
+//   - Se ore = 0 o entrambe le date assenti → date lasciate come sono
+function autoCorreggiDate(inizio, fine, stimaOre) {
+  const ore = Math.max(0, Number(stimaOre) || 0);
+  const needed = ore > 0 ? Math.ceil(ore / 8) : 0;
+  let i = inizio || null;
+  let f = fine || null;
+
+  if (needed === 0) {
+    // Senza ore non possiamo dedurre nulla. Se manca una delle due la
+    // settiamo uguale all'altra per coerenza minima del Gantt.
+    if (i && !f) f = i;
+    if (!i && f) i = f;
+    return { inizio: i, fine: f };
+  }
+
+  if (i && !f) {
+    f = aggiungiGiorni(i, needed);
+  } else if (!i && f) {
+    i = aggiungiGiorni(f, -needed);
+  } else if (i && f) {
+    const minF = aggiungiGiorni(i, needed);
+    if (f < minF) f = minF;
+  }
+  return { inizio: i, fine: f };
+}
+
 function buildTask(issue, existing, nextOrdine) {
   const f = issue.fields || {};
   const isEpic = f.issuetype?.name === 'Epic';
@@ -156,9 +196,18 @@ function buildTask(issue, existing, nextOrdine) {
   const statoNuovo = mapStato(issue);
   const orig = Number(f.timetracking?.originalEstimateSeconds || 0);
   const stimaOre = arrotondaOreA05(orig / 3600);
-  // Date: per le epiche lasciamo vuote (frontend le calcola dai figli)
-  const start = isEpic ? null : (f[startDateField] || (f.created || '').slice(0, 10) || null);
-  const due   = isEpic ? null : (f.duedate || start || null);
+  // Date: per le epiche lasciamo vuote (frontend le calcola dai figli).
+  // Per i task: start = Start date Jira o data creazione; end = Due date Jira;
+  // poi auto-correzione in base alle ore stimate (8h/giorno).
+  let start = null;
+  let due = null;
+  if (!isEpic) {
+    start = f[startDateField] || (f.created || '').slice(0, 10) || null;
+    due   = f.duedate || null;
+    const corrette = autoCorreggiDate(start, due, stimaOre);
+    start = corrette.inizio;
+    due   = corrette.fine;
+  }
 
   // Campi MY-GANTT-only mai sovrascritti dal sync
   const preserved = existing ? {
