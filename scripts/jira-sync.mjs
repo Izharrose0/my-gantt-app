@@ -297,6 +297,31 @@ function normNome(s) {
   return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Unisce l'assegnatario Jira con le assegnazioni esistenti in MY-GANTT.
+// Regole:
+//   - Se la task non aveva nessuna assegnazione → usa quella di Jira tal quale
+//   - Se l'assegnatario Jira è già presente nelle esistenti → conserva tutto
+//     intatto (anche l'effort scelto manualmente dall'utente: MY-GANTT vince)
+//   - Se l'assegnatario Jira NON è ancora presente → lo aggiungiamo in coda
+//     senza toccare gli effort esistenti (effort 100 di default, l'utente
+//     può aggiustare in MY-GANTT)
+//   - Se non c'è assegnatario su Jira → conserviamo le assegnazioni manuali
+function mergeAssegnazioni(daJira, esistenti) {
+  const ex = Array.isArray(esistenti) ? esistenti.filter(a => a && a.personaId) : [];
+  const jr = Array.isArray(daJira)    ? daJira.filter(a => a && a.personaId)    : [];
+
+  if (ex.length === 0) return jr.map(a => ({ ...a }));
+  if (jr.length === 0) return ex.map(a => ({ ...a }));
+
+  const jiraPersonaId = jr[0].personaId;
+  const hasJira = ex.some(a => a.personaId === jiraPersonaId);
+  if (hasJira) return ex.map(a => ({ ...a }));
+
+  // Aggiunge l'assegnatario Jira in coda (effort 100). L'utente può
+  // riequilibrare manualmente; i suoi extra restano intatti.
+  return [...ex.map(a => ({ ...a })), { personaId: jiraPersonaId, effort: 100 }];
+}
+
 function resolveAssignee(issue, persone, personeNuove) {
   const a = issue.fields?.assignee;
   if (!a) return [];
@@ -369,14 +394,16 @@ async function main() {
   let nextOrdine = maxOrdine + 1;
   const personeNuove = [];
 
-  // 1st pass: build task + assegnazioni
+  // 1st pass: build task + merge assegnazioni
   const jiraKeyToTask = new Map();
   let creati = 0, aggiornati = 0;
   for (const issue of issues) {
     const existing = byJiraKey.get(issue.key);
     const task = buildTask(issue, existing, nextOrdine);
     if (!existing) { creati++; nextOrdine++; } else { aggiornati++; }
-    task.assegnazioni = resolveAssignee(issue, stato.persone, personeNuove);
+    const daJira     = resolveAssignee(issue, stato.persone, personeNuove);
+    const esistenti  = existing ? (existing.assegnazioni || []) : [];
+    task.assegnazioni = mergeAssegnazioni(daJira, esistenti);
     jiraKeyToTask.set(issue.key, task);
   }
 
