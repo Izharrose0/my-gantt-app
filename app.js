@@ -2230,6 +2230,7 @@ function apriModaleTask(id) {
   } else if (isEpica) {
     tempAssegnazioniEdit = [];
     tempDipendenzeEdit = [];
+    renderEpicaRiepilogo(t);
   } else {
     document.getElementById('edit-inizio').value = t.inizio || '';
     document.getElementById('edit-fine').value   = t.fine || '';
@@ -3656,6 +3657,76 @@ function renderEisenhower() {
   container.querySelectorAll('.eisen-card').forEach(el => {
     el.addEventListener('click', () => apriModaleTask(el.dataset.id));
   });
+}
+
+// Aggregazione persone-ore-costo per un'epica (somma tra tutti i leaf
+// descendant). Restituisce un array ordinato per ore desc.
+function aggregazioniEpica(epica) {
+  const acc = new Map(); // personaId → { persona, ore, costo, taskCount, effortSum }
+  function walk(id) {
+    const figli = stato.task.filter(x => x.parentId === id);
+    if (!figli.length) {
+      const leaf = stato.task.find(x => x.id === id);
+      if (!leaf || leaf.tipo === 'milestone') return;
+      const stima = Number(leaf.stimaOre) || 0;
+      (leaf.assegnazioni || []).forEach(a => {
+        const p = trovaPersona(a.personaId);
+        if (!p) return;
+        const effort = Number(a.effort) || 0;
+        const ore = stima * effort / 100;
+        const tariffa = Number(p.costoOrario) || 0;
+        const entry = acc.get(p.id) || {
+          persona: p, ore: 0, costo: 0, taskCount: 0, effortSum: 0
+        };
+        entry.ore       += ore;
+        entry.costo     += ore * tariffa;
+        entry.taskCount += 1;
+        entry.effortSum += effort;
+        acc.set(p.id, entry);
+      });
+    } else {
+      figli.forEach(f => walk(f.id));
+    }
+  }
+  walk(epica.id);
+  return Array.from(acc.values()).sort((a, b) => b.ore - a.ore);
+}
+
+function renderEpicaRiepilogo(epica) {
+  const cont = document.getElementById('epica-riepilogo');
+  if (!cont) return;
+  const agg = aggregaEpica(epica);
+  const persone = aggregazioniEpica(epica);
+  const oreTotali = persone.reduce((s, x) => s + x.ore, 0);
+
+  const personeHtml = persone.length
+    ? persone.map(({ persona, ore, costo, taskCount, effortSum }) => {
+        const effortMedio = taskCount > 0 ? Math.round(effortSum / taskCount) : 0;
+        return `
+          <div class="epica-persona-row">
+            ${avatar(persona, 'sm')}
+            <strong>${escapeHtml(persona.nome)}</strong>
+            <small style="color: var(--color-text-muted)">${escapeHtml(persona.ruolo || '')}</small>
+            <div class="epica-persona-meta">
+              <span>${taskCount} task</span>
+              <span><strong>${ore.toFixed(1)}h</strong></span>
+              <span>~${effortMedio}% medio</span>
+              ${costo > 0 ? `<span><strong>${formatEuro(costo)}</strong></span>` : ''}
+            </div>
+          </div>`;
+      }).join('')
+    : '<div class="epica-riepilogo-empty">Nessuna persona assegnata ai task figli.</div>';
+
+  cont.innerHTML = `
+    <h4>Riepilogo epica</h4>
+    <div class="epica-riepilogo-totale">
+      <span><strong>${agg.stimaOre || 0}h</strong> stimate</span>
+      <span><strong>${oreTotali.toFixed(1)}h</strong> allocate</span>
+      <span><strong>${formatEuro(agg.costoTotale || 0)}</strong> totale</span>
+      <span><strong>${agg.completamento || 0}%</strong> completato</span>
+    </div>
+    <div class="epica-riepilogo-persone">${personeHtml}</div>
+  `;
 }
 
 // Raccogli persone uniche assegnate a un'epica (via discendenti foglia)
