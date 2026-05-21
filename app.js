@@ -3319,8 +3319,9 @@ function scrollWorkloadAOggi() {
   if (!line) return;
   const lineLeft = parseFloat(line.style.left) || 0;
   const sideW = side ? side.offsetWidth : 0;
+  // Oggi a 1/3 della viewport (coerente con scrollAOggi del Gantt)
   const visibile = container.clientWidth - sideW;
-  container.scrollLeft = lineLeft - visibile / 2;
+  container.scrollLeft = Math.max(0, lineLeft - visibile / 3);
 }
 
 function scrollGanttAlGiorno(isoTarget) {
@@ -3363,9 +3364,10 @@ function scrollAOggi() {
   if (!line) return;
   const lineLeft = parseFloat(line.style.left) || 0;
   const sideW = side ? side.offsetWidth : 0;
-  // Centra "oggi" nell'area visibile a destra della colonna laterale
+  // Posiziona "oggi" a 1/3 della viewport (cosi' resta visibile cio' che e'
+  // gia' iniziato a sinistra e c'e' piu' spazio per quello che sta arrivando)
   const visibile = container.clientWidth - sideW;
-  container.scrollLeft = lineLeft - visibile / 2;
+  container.scrollLeft = Math.max(0, lineLeft - visibile / 3);
 }
 
 // ===== WORKLOAD: calcolo carico (estratto per essere riutilizzato dal modal dettaglio) =====
