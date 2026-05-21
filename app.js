@@ -1196,6 +1196,8 @@ function caricaStato() {
 
 // Riferimento alla unsubscribe del listener Firestore (per disattivarlo a logout)
 let _unsubFirestore = null;
+// Flag: ho gia' fatto scroll iniziale a "oggi" dopo aver ricevuto i dati?
+let _scrollatoAOggiIniziale = false;
 
 function avviaSyncFirestore() {
   // Niente sync se l'utente non e' loggato — protezione contro la cache
@@ -1245,6 +1247,15 @@ function avviaSyncFirestore() {
       aggiornaTooltipUltimaModifica();
       aggiornaViste();
       impostaSyncStato('connected');
+      // Scroll iniziale: solo la prima volta che ricevo dati, e solo se
+      // l'utente e' su Gantt o Workload (la chiamata in inizializza() era
+      // troppo presto, prima dell'arrivo dei dati Firestore)
+      if (!_scrollatoAOggiIniziale) {
+        const tabAttiva = document.querySelector('.tab.active')?.dataset.tab;
+        if (tabAttiva === 'gantt')         setTimeout(scrollAOggi, 100);
+        else if (tabAttiva === 'workload') setTimeout(scrollWorkloadAOggi, 100);
+        _scrollatoAOggiIniziale = true;
+      }
     } catch (e) {
       console.error('Errore applicazione snapshot remoto:', e);
       impostaSyncStato('error');
@@ -1273,6 +1284,7 @@ function terminaSyncFirestore() {
   }
   stato = { persone: [], task: [], festivita: [] };
   try { localStorage.removeItem('gantt-app-stato'); } catch {}
+  _scrollatoAOggiIniziale = false; // al prossimo login, ri-fai lo scroll
   aggiornaViste();
   impostaSyncStato('loading');
 }
