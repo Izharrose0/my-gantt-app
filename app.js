@@ -56,6 +56,12 @@ function inizializzaAuth() {
     utenteCorrente = user;
     console.log('[AUTH] onAuthStateChanged →', user?.email || 'logged out');
     aggiornaUIPermessi();
+    // Quando lo stato auth cambia (login o logout) ricarico Firestore:
+    // se erano arrivate permission-denied, ora potrebbero risolversi.
+    if (user) {
+      rimuoviBannerAccesso();
+      try { avviaSyncFirestore(); } catch {}
+    }
   });
 
   // Se l'utente è appena arrivato cliccando il link dall'email, completa il login
@@ -125,6 +131,20 @@ function inizializzaAuth() {
   document.getElementById('btn-chiudi-modal-assoc-persone')?.addEventListener('click', () => {
     document.getElementById('modal-assoc-persone-overlay').classList.add('hidden');
   });
+
+  // Click "Gestisci accessi" → apri modale whitelist
+  document.getElementById('btn-gestisci-accessi')?.addEventListener('click', apriModaleAccessi);
+  document.getElementById('btn-chiudi-modal-accessi')?.addEventListener('click', () => {
+    document.getElementById('modal-accessi-overlay').classList.add('hidden');
+  });
+  document.getElementById('form-accessi-add')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const input = document.getElementById('accessi-email-nuova');
+    const email = (input.value || '').trim().toLowerCase();
+    if (!email) return;
+    await aggiungiAccessoEmail(email);
+    input.value = '';
+  });
   document.getElementById('btn-vis-tutti')?.addEventListener('click', () => setVisibilitaTutte(false));
   document.getElementById('btn-vis-nessuno')?.addEventListener('click', () => setVisibilitaTutte(true));
   document.getElementById('btn-vis-solo-jira')?.addEventListener('click', () => {
@@ -136,6 +156,87 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== GESTIONE ACCESSI (WHITELIST EMAIL) =====
+// La whitelist è storata in Firestore: collection "config", doc "auth",
+// campo "viewerEmails" (array di stringhe). Le rules consultano questo
+// doc tramite get() per autorizzare i read sulle /workspaces.
+
+const CONFIG_AUTH_PATH = ['config', 'auth'];
+
+async function caricaWhitelist() {
+  const fb = window.__firebase;
+  if (!fb || !fb.db || !fb.doc) return { viewerEmails: [] };
+  try {
+    const ref = fb.doc(fb.db, ...CONFIG_AUTH_PATH);
+    const { getDoc } = await import('https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js');
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return { viewerEmails: [] };
+    const data = snap.data() || {};
+    return {
+      viewerEmails: Array.isArray(data.viewerEmails) ? data.viewerEmails : []
+    };
+  } catch (e) {
+    console.warn('caricaWhitelist:', e);
+    return { viewerEmails: [] };
+  }
+}
+
+async function salvaWhitelist(viewerEmails) {
+  const fb = window.__firebase;
+  if (!fb || !fb.db || !fb.doc || !fb.setDoc) return false;
+  try {
+    const ref = fb.doc(fb.db, ...CONFIG_AUTH_PATH);
+    await fb.setDoc(ref, { viewerEmails }, { merge: true });
+    return true;
+  } catch (e) {
+    alert('Salvataggio fallito: ' + (e.message || e.code || e));
+    return false;
+  }
+}
+
+async function apriModaleAccessi() {
+  document.getElementById('modal-accessi-overlay').classList.remove('hidden');
+  await renderListaAccessi();
+}
+
+async function renderListaAccessi() {
+  const ul = document.getElementById('lista-accessi');
+  if (!ul) return;
+  ul.innerHTML = '<li class="empty-state">Caricamento…</li>';
+  const cfg = await caricaWhitelist();
+  if (!cfg.viewerEmails.length) {
+    ul.innerHTML = '<li class="empty-state">Nessuna email autorizzata oltre all\'owner.</li>';
+    return;
+  }
+  ul.innerHTML = cfg.viewerEmails
+    .slice()
+    .sort()
+    .map(e => `
+      <li class="acc-row">
+        <code>${escapeHtml(e)}</code>
+        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-email="${escapeHtml(e)}">Rimuovi</button>
+      </li>`).join('');
+  ul.querySelectorAll('[data-rimuovi-email]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const email = btn.dataset.rimuoviEmail;
+      if (!confirm(`Rimuovere "${email}" dalla whitelist?`)) return;
+      const cfg = await caricaWhitelist();
+      const updated = cfg.viewerEmails.filter(x => x !== email);
+      if (await salvaWhitelist(updated)) renderListaAccessi();
+    });
+  });
+}
+
+async function aggiungiAccessoEmail(email) {
+  const cfg = await caricaWhitelist();
+  if (cfg.viewerEmails.includes(email)) {
+    alert('Questa email è già nella whitelist.');
+    return;
+  }
+  const updated = [...cfg.viewerEmails, email];
+  if (await salvaWhitelist(updated)) renderListaAccessi();
 }
 
 // ===== TRIGGER WORKFLOW GITHUB ACTIONS DA APP =====
@@ -1109,7 +1210,38 @@ function avviaSyncFirestore() {
   }, err => {
     console.error('Firestore listen error:', err);
     impostaSyncStato('error');
+    if (err?.code === 'permission-denied') {
+      mostraBannerAccesso();
+    }
   });
+}
+
+// Banner "non sei autorizzato": appare quando Firestore rifiuta la lettura.
+function mostraBannerAccesso() {
+  if (document.getElementById('access-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'access-banner';
+  banner.className = 'access-banner';
+  const loggedIn = utenteCorrente != null;
+  banner.innerHTML = loggedIn
+    ? `<div>
+         <strong>Accesso negato</strong> per <code>${escapeHtml(utenteCorrente.email)}</code>.
+         Questa email non è nella lista dei viewer autorizzati.
+         Contatta l'owner per essere aggiunto, oppure <button type="button" class="link-btn" id="ab-logout">esci</button> per provare con un'altra email.
+       </div>`
+    : `<div>
+         <strong>Login richiesto</strong> — questo workspace è privato.
+         <button type="button" class="link-btn" id="ab-login">Accedi con email magic link</button>
+       </div>`;
+  document.body.appendChild(banner);
+  banner.querySelector('#ab-login')?.addEventListener('click', () =>
+    document.getElementById('btn-login-email')?.click());
+  banner.querySelector('#ab-logout')?.addEventListener('click', () =>
+    document.getElementById('btn-logout')?.click());
+}
+
+function rimuoviBannerAccesso() {
+  document.getElementById('access-banner')?.remove();
 }
 
 // Converte i task dal vecchio formato (personaId+effort) al nuovo

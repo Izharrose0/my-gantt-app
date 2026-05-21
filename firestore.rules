@@ -1,24 +1,51 @@
 rules_version = '2';
 
 // Regole di sicurezza Firestore per MY-GANTT.
-// Modello: lettura pubblica, scrittura solo per l'owner via Google Sign-In.
+//
+// Modello:
+// - OWNER (`i.coletti@invrsion.com`) può leggere e scrivere tutto.
+// - VIEWER (email nella lista /config/auth.viewerEmails) possono SOLO leggere
+//   i dati del workspace.
+// - Chiunque altro: nessun accesso.
 //
 // DEPLOY:
 //   firebase deploy --only firestore:rules
-//
-// IMPORTANTE: prima di deployare queste rules, l'owner deve essersi loggato
-// con Google almeno una volta usando l'email indicata sotto. Altrimenti
-// l'app diventa read-only per tutti finché non risolviamo.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Workspace condiviso: lettura libera, scrittura solo per l'owner.
-    match /{collection}/{doc} {
-      allow read: if true;
-      allow write: if request.auth != null
-                   && request.auth.token.email == 'i.coletti@invrsion.com'
-                   && request.auth.token.email_verified == true;
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'i.coletti@invrsion.com';
+    }
+
+    // Lista email autorizzate a leggere: storata in /config/auth.viewerEmails.
+    // get() in rules bypassa le altre rules (operazione privilegiata), quindi
+    // questo legge il doc anche se il chiamante non avrebbe diritto.
+    // Se il doc non esiste, restituisce lista vuota -> solo owner pu\xf2 leggere.
+    function viewerEmails() {
+      let cfg = get(/databases/$(database)/documents/config/auth);
+      return cfg.data.viewerEmails is list ? cfg.data.viewerEmails : [];
+    }
+
+    function isAuthorized() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email == 'i.coletti@invrsion.com'
+            || request.auth.token.email in viewerEmails());
+    }
+
+    // Dati del workspace (task, persone, ferie, ecc.): lettura per viewer
+    // autorizzati + owner; scrittura solo owner.
+    match /workspaces/{doc=**} {
+      allow read:  if isAuthorized();
+      allow write: if isOwner();
+    }
+
+    // Config auth (whitelist): solo owner pu\xf2 vederla e modificarla.
+    match /config/{doc=**} {
+      allow read, write: if isOwner();
     }
   }
 }

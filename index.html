@@ -43,6 +43,7 @@
           <button type="button" class="kebab-item only-owner" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
           <button type="button" class="kebab-item only-owner" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
+          <button type="button" class="kebab-item only-owner" id="btn-gestisci-accessi">Gestisci accessi (whitelist)</button>
           <div class="kebab-divider only-owner"></div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
           <label class="kebab-item only-owner">
@@ -513,6 +514,26 @@
     </div>
   </div>
 
+  <!-- =================== MODAL GESTIONE ACCESSI =================== -->
+  <div id="modal-accessi-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Gestisci accessi (whitelist email)</h3>
+        <button class="btn-close" id="btn-chiudi-modal-accessi" type="button">×</button>
+      </header>
+      <p class="hint">
+        Solo l'owner e le email indicate sotto possono leggere i dati di MY-GANTT.
+        Le persone in lista devono fare login con la stessa email (Email Magic Link).
+        L'enforcement è server-side via Firestore rules, quindi è davvero a prova di manomissione.
+      </p>
+      <form id="form-accessi-add" class="form-inline" style="margin-bottom:0.6rem">
+        <input type="email" id="accessi-email-nuova" placeholder="email@esempio.com" required>
+        <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+      </form>
+      <ul id="lista-accessi" class="lista"></ul>
+    </div>
+  </div>
+
   <!-- =================== MODAL ASSOCIAZIONE PERSONE JIRA ↔ MY-GANTT =================== -->
   <div id="modal-assoc-persone-overlay" class="modal-overlay hidden">
     <div class="modal modal-lg">
@@ -595,6 +616,9 @@
       sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
       signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+    import {
+      initializeAppCheck, ReCaptchaV3Provider
+    } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app-check.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBLgoM5sz57pzuGDbOzsmGPlJLZHQA6YLw",
@@ -606,6 +630,28 @@
     };
 
     const app = initializeApp(firebaseConfig);
+
+    // App Check (anti-bot / anti-scraping) — DA CONFIGURARE:
+    //   1. Vai su https://www.google.com/recaptcha/admin/create
+    //      - type: reCAPTCHA v3
+    //      - domain: izharrose0.github.io
+    //   2. Copia il Site Key e incollalo sotto al posto di "REPLACE_ME"
+    //   3. Firebase Console -> App Check -> Apps -> registra il Web app
+    //      con provider reCAPTCHA v3 e lo stesso site key
+    //   4. Abilita enforcement su Firestore (inizia con "Monitor", poi "Enforce")
+    const RECAPTCHA_V3_SITE_KEY = 'REPLACE_ME';
+    if (RECAPTCHA_V3_SITE_KEY && RECAPTCHA_V3_SITE_KEY !== 'REPLACE_ME') {
+      try {
+        initializeAppCheck(app, {
+          provider: new ReCaptchaV3Provider(RECAPTCHA_V3_SITE_KEY),
+          isTokenAutoRefreshEnabled: true
+        });
+        console.log('[AppCheck] inizializzato');
+      } catch (e) {
+        console.warn('[AppCheck] inizializzazione fallita:', e);
+      }
+    }
+
     const db = getFirestore(app);
     const auth = getAuth(app);
     // Mantieni la sessione anche dopo refresh/chiusura tab
