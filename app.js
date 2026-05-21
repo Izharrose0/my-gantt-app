@@ -57,13 +57,15 @@ function inizializzaAuth() {
     console.log('[AUTH] onAuthStateChanged →', user?.email || 'logged out');
     aggiornaUIPermessi();
     if (user) {
-      // Login appena avvenuto: tolgo il banner (verra' ricreato se il
-      // listener Firestore continua a fallire) e ri-attivo la sync.
+      // Login OK: tolgo il banner e parte la sync Firestore. Se l'utente
+      // non e' nella whitelist, il listener fallira' subito con
+      // permission-denied e il banner riapparira'.
       rimuoviBannerAccesso();
       try { avviaSyncFirestore(); } catch {}
-    } else if (document.getElementById('access-banner')) {
-      // Logout mentre il banner era visibile: ri-rendero con la
-      // variante "Login richiesto" (l'esci stesso porta qui).
+    } else {
+      // Logout (o stato iniziale "non loggato"): chiudo la sottoscrizione,
+      // svuoto lo stato e mostro il banner di login.
+      terminaSyncFirestore();
       mostraBannerAccesso();
     }
   });
@@ -1155,37 +1157,48 @@ function salvaStato() {
 }
 
 function caricaStato() {
-  // 1) Carico fallback locale per non mostrare schermo vuoto in attesa di Firestore
-  const raw = localStorage.getItem('gantt-app-stato');
-  if (raw) {
-    try {
-      stato = migraStato(JSON.parse(raw));
-      collassaTutteEpicheInizialmente();
-    } catch {}
-  }
+  // SICUREZZA: lo stato parte vuoto e l'app e' visualmente bloccata fino a
+  // quando l'auth non e' risolta come utente con permessi. Nessuna lettura
+  // di localStorage o Firestore prima dell'autenticazione.
+  stato = { persone: [], task: [], festivita: [] };
+  document.body.setAttribute('data-locked', 'true');
+  impostaSyncStato('loading');
 
-  // 2) Sottoscrivi Firestore + Auth (o quando il bridge è pronto)
   if (window.__firebase) {
-    avviaSyncFirestore();
     inizializzaAuth();
   } else {
-    impostaSyncStato('loading');
-    window.addEventListener('firebase-ready', () => {
-      avviaSyncFirestore();
-      inizializzaAuth();
-    }, { once: true });
-    // Timeout: se Firebase non si carica entro 5s, resta in modalità locale
+    window.addEventListener('firebase-ready', inizializzaAuth, { once: true });
     setTimeout(() => {
       if (!window.__firebase) impostaSyncStato('offline');
     }, 5000);
   }
 }
 
+// Riferimento alla unsubscribe del listener Firestore (per disattivarlo a logout)
+let _unsubFirestore = null;
+
 function avviaSyncFirestore() {
+  // Niente sync se l'utente non e' loggato — protezione contro la cache
+  // IndexedDB che servirebbe dati a chi non e' autorizzato
+  if (!utenteCorrente) return;
+  // Idempotente: se gia' attiva, non duplicare
+  if (_unsubFirestore) return;
+
+  // Ora che siamo autenticati, posso anche caricare la cache locale
+  // (creata da una sessione precedente legittima)
+  const raw = localStorage.getItem('gantt-app-stato');
+  if (raw) {
+    try {
+      stato = migraStato(JSON.parse(raw));
+      collassaTutteEpicheInizialmente();
+      aggiornaViste();
+    } catch {}
+  }
+
   const { db, doc, onSnapshot } = window.__firebase;
   const ref = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC);
 
-  onSnapshot(ref, snap => {
+  _unsubFirestore = onSnapshot(ref, snap => {
     // I write locali pendenti producono uno snapshot subito: lo ignoriamo
     if (snap.metadata.hasPendingWrites) return;
 
@@ -1220,9 +1233,26 @@ function avviaSyncFirestore() {
     console.error('Firestore listen error:', err);
     impostaSyncStato('error');
     if (err?.code === 'permission-denied') {
+      // Clear di tutto cio' che potrebbe essere stato gia' renderizzato
+      // dalla cache IndexedDB prima che il server respingesse la lettura
+      stato = { persone: [], task: [], festivita: [] };
+      try { localStorage.removeItem('gantt-app-stato'); } catch {}
+      aggiornaViste();
       mostraBannerAccesso();
     }
   });
+}
+
+// Termina la sottoscrizione e svuota i dati locali (al logout)
+function terminaSyncFirestore() {
+  if (_unsubFirestore) {
+    try { _unsubFirestore(); } catch {}
+    _unsubFirestore = null;
+  }
+  stato = { persone: [], task: [], festivita: [] };
+  try { localStorage.removeItem('gantt-app-stato'); } catch {}
+  aggiornaViste();
+  impostaSyncStato('loading');
 }
 
 // Toast non-blocking, usato in posti dove prima usavamo alert(). Tipi:
