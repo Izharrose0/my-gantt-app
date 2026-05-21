@@ -3061,6 +3061,53 @@ body[data-role="viewer"] .eisen-card { cursor: pointer; }
   .eisen-card .avatar-xs { width: 14px; height: 14px; font-size: 0.5rem; }
 }
 
+/* Lock dell'app quando il banner accesso e' visibile: nasconde i dati
+   sottostanti per evitare che la cache locale di Firestore (IndexedDB)
+   li mostri prima che il listener server ne ricevia il "permission denied" */
+body[data-locked="true"] main,
+body[data-locked="true"] .tabs,
+body[data-locked="true"] .app-header .actions-top {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Toast notifications (sostituiscono alert blocking) */
+.app-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1600;
+  padding: 0.8rem 1rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  max-width: calc(100vw - 32px);
+  animation: toast-in 0.18s ease-out;
+}
+@keyframes toast-in {
+  from { transform: translate(-50%, -8px); opacity: 0; }
+  to   { transform: translate(-50%, 0);    opacity: 1; }
+}
+.app-toast-info    { border-left: 3px solid var(--color-primary, #5e6ad2); }
+.app-toast-success { border-left: 3px solid #10b981; }
+.app-toast-error   { border-left: 3px solid #ef4444; }
+.app-toast button {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.app-toast button:hover { color: var(--color-text); }
+
 /* Banner "Login richiesto" / "Accesso negato" */
 .access-banner {
   position: fixed;

@@ -56,11 +56,15 @@ function inizializzaAuth() {
     utenteCorrente = user;
     console.log('[AUTH] onAuthStateChanged →', user?.email || 'logged out');
     aggiornaUIPermessi();
-    // Quando lo stato auth cambia (login o logout) ricarico Firestore:
-    // se erano arrivate permission-denied, ora potrebbero risolversi.
     if (user) {
+      // Login appena avvenuto: tolgo il banner (verra' ricreato se il
+      // listener Firestore continua a fallire) e ri-attivo la sync.
       rimuoviBannerAccesso();
       try { avviaSyncFirestore(); } catch {}
+    } else if (document.getElementById('access-banner')) {
+      // Logout mentre il banner era visibile: ri-rendero con la
+      // variante "Login richiesto" (l'esci stesso porta qui).
+      mostraBannerAccesso();
     }
   });
 
@@ -81,7 +85,12 @@ function inizializzaAuth() {
         })
         .catch(e => {
           console.error('[AUTH] signInWithEmailLink ERRORE:', e);
-          alert('Login fallito: ' + (e.message || e.code || e));
+          // Pulisco l'URL così l'utente non resta su un link "consumato"
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+          // Notifica non-blocking (no alert, che bloccherebbe il rendering)
+          mostraToast('❌ Login fallito: ' + (e.code || e.message || 'errore sconosciuto') +
+                      '. Riprova facendo richiesta del link da questo browser.', 'error');
         });
     }
   }
@@ -1216,31 +1225,55 @@ function avviaSyncFirestore() {
   });
 }
 
+// Toast non-blocking, usato in posti dove prima usavamo alert(). Tipi:
+// 'info' | 'success' | 'error'. Auto-rimosso dopo 6 secondi.
+function mostraToast(msg, tipo = 'info') {
+  let t = document.createElement('div');
+  t.className = `app-toast app-toast-${tipo}`;
+  t.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" aria-label="Chiudi">×</button>`;
+  document.body.appendChild(t);
+  t.querySelector('button').addEventListener('click', () => t.remove());
+  setTimeout(() => t.remove(), 6000);
+}
+
 // Banner "non sei autorizzato": appare quando Firestore rifiuta la lettura.
+// È idempotente — può essere richiamato per ri-renderizzare se cambia auth.
 function mostraBannerAccesso() {
-  if (document.getElementById('access-banner')) return;
-  const banner = document.createElement('div');
-  banner.id = 'access-banner';
-  banner.className = 'access-banner';
+  document.body.setAttribute('data-locked', 'true');
+  let banner = document.getElementById('access-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'access-banner';
+    banner.className = 'access-banner';
+    document.body.appendChild(banner);
+  }
   const loggedIn = utenteCorrente != null;
   banner.innerHTML = loggedIn
     ? `<div>
-         <strong>Accesso negato</strong> per <code>${escapeHtml(utenteCorrente.email)}</code>.
-         Questa email non è nella lista dei viewer autorizzati.
-         Contatta l'owner per essere aggiunto, oppure <button type="button" class="link-btn" id="ab-logout">esci</button> per provare con un'altra email.
+         <strong>Accesso negato</strong> per <code>${escapeHtml(utenteCorrente.email)}</code>.<br>
+         Questa email non è nella lista dei viewer autorizzati.<br>
+         Contatta l'owner per essere aggiunto, oppure esci e prova con un'altra email.
+         <br>
+         <button type="button" class="link-btn" id="ab-logout">Esci</button>
        </div>`
     : `<div>
-         <strong>Login richiesto</strong> — questo workspace è privato.
+         <strong>Login richiesto</strong><br>
+         Questo workspace è privato.
+         <br>
          <button type="button" class="link-btn" id="ab-login">Accedi con email magic link</button>
        </div>`;
-  document.body.appendChild(banner);
   banner.querySelector('#ab-login')?.addEventListener('click', () =>
     document.getElementById('btn-login-email')?.click());
-  banner.querySelector('#ab-logout')?.addEventListener('click', () =>
-    document.getElementById('btn-logout')?.click());
+  banner.querySelector('#ab-logout')?.addEventListener('click', async () => {
+    const fb = window.__firebase;
+    if (!fb || !fb.auth) return;
+    try { await fb.signOut(fb.auth); } catch (e) { console.warn('signOut:', e); }
+    // onAuthStateChanged fara' partire la ri-renderizzazione del banner
+  });
 }
 
 function rimuoviBannerAccesso() {
+  document.body.removeAttribute('data-locked');
   document.getElementById('access-banner')?.remove();
 }
 
