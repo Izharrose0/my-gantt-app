@@ -26,7 +26,14 @@ const {
   FIREBASE_SERVICE_ACCOUNT
 } = process.env;
 
-const projectKey = (JIRA_PROJECT_KEY_OVERRIDE || JIRA_PROJECT_KEY || '').trim();
+// Lista di project keys da sincronizzare. Precedenza:
+//   1. JIRA_PROJECT_KEY_OVERRIDE (workflow_dispatch input, comma-separated)
+//   2. /config/jira.projects su Firestore (configurata dall'app)
+//   3. JIRA_PROJECT_KEY secret (single, fallback per single-project)
+function parseList(s) {
+  return (s || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+const projectKeysOverride = parseList(JIRA_PROJECT_KEY_OVERRIDE);
 const startDateField = (JIRA_START_DATE_FIELD || 'customfield_10015').trim();
 
 function abort(msg) {
@@ -37,7 +44,6 @@ function abort(msg) {
 if (!JIRA_DOMAIN)             abort('Manca JIRA_DOMAIN (es. mioteam.atlassian.net)');
 if (!JIRA_EMAIL)              abort('Manca JIRA_EMAIL');
 if (!JIRA_API_TOKEN)          abort('Manca JIRA_API_TOKEN');
-if (!projectKey)              abort('Manca JIRA_PROJECT_KEY');
 if (!FIREBASE_SERVICE_ACCOUNT) abort('Manca FIREBASE_SERVICE_ACCOUNT');
 
 const PALETTE = [
@@ -227,7 +233,7 @@ async function autoDetectStartDateField() {
 // Usa il nuovo endpoint /rest/api/3/search/jql (l'API legacy /search è
 // stata rimossa da Atlassian — CHANGE-2046). Paginazione a cursore con
 // nextPageToken invece di startAt/total.
-async function fetchAllIssues() {
+async function fetchAllIssues(projectKey) {
   const PAGE_SIZE = 100;
   const jql = `project = "${projectKey}" ORDER BY created ASC`;
   let nextPageToken = undefined;
@@ -281,7 +287,7 @@ function normalizzaDate(inizio, fine) {
   return { inizio: i, fine: f };
 }
 
-function buildTask(issue, existing, nextOrdine) {
+function buildTask(issue, existing, nextOrdine, projectKey) {
   const f = issue.fields || {};
   const isEpic = f.issuetype?.name === 'Epic';
   const tipo = isEpic ? 'epica' : 'task';
@@ -327,6 +333,7 @@ function buildTask(issue, existing, nextOrdine) {
     ordine: existing?.ordine ?? nextOrdine,
     ...preserved,
     jiraKey: issue.key,
+    jiraProject: projectKey,
     jiraUrl: `https://${JIRA_DOMAIN}/browse/${issue.key}`,
     jiraUpdated: new Date().toISOString(),
     // Snapshot per detection dei delta manuali al prossimo sync
@@ -415,15 +422,43 @@ function resolveAssignee(issue, persone, personeNuove) {
 
 // ===== Run =====
 
+// Risoluzione lista progetti da sincronizzare (in ordine di precedenza)
+async function risolviProgetti() {
+  if (projectKeysOverride.length) {
+    return { source: 'override', list: projectKeysOverride };
+  }
+  // Da Firestore /config/jira.projects
+  try {
+    const cfgRef = db.collection('config').doc('jira');
+    const snap = await cfgRef.get();
+    if (snap.exists) {
+      const list = Array.isArray(snap.data()?.projects) ? snap.data().projects : [];
+      if (list.length) return { source: 'firestore', list };
+    }
+  } catch (e) {
+    console.warn('  ⚠ Lettura /config/jira fallita:', e.message);
+  }
+  // Fallback: env secret
+  if (JIRA_PROJECT_KEY) {
+    return { source: 'env', list: parseList(JIRA_PROJECT_KEY) };
+  }
+  return { source: 'none', list: [] };
+}
+
 async function main() {
   console.log(`▶ Sync Jira → Firestore`);
   console.log(`  Domain: ${JIRA_DOMAIN}`);
-  console.log(`  Project: ${projectKey}`);
 
   // Modalità del run: pull = solo Jira→MY-GANTT, push = solo MY-GANTT→Jira,
   // both = entrambe (default per retro-compatibilità).
   const DIRECTION = (process.env.SYNC_DIRECTION || 'both').toLowerCase();
   console.log(`  Modalità: ${DIRECTION}`);
+
+  const { source, list: projectKeys } = await risolviProgetti();
+  if (!projectKeys.length) {
+    abort('Nessun progetto da sincronizzare. Configura /config/jira.projects dall\'app oppure setta JIRA_PROJECT_KEY come secret.');
+  }
+  console.log(`  Progetti (${source}): ${projectKeys.join(', ')}`);
 
   console.log('▶ Rilevo campo Start date...');
   await autoDetectStartDateField();
@@ -462,114 +497,90 @@ async function main() {
     await pushModificheDate(statoPre);
   }
 
-  // ===== MODALITÀ PULL / BOTH: fetch da Jira =====
-  console.log('▶ Fetch issue da Jira...');
-  const issues = await fetchAllIssues();
-  console.log(`✓ ${issues.length} issue ricevute`);
-
-  // Diagnostica delle date.
-  // Conteggio: quanti task non-Epic hanno start/due popolati?
-  const nonEpics = issues.filter(it => it.fields?.issuetype?.name !== 'Epic');
-  const conStart = nonEpics.filter(it => it.fields?.[resolvedStartDateField]).length;
-  const conDue   = nonEpics.filter(it => it.fields?.duedate).length;
-  console.log(`▶ Diagnostica date (campo Start = ${resolvedStartDateField}):`);
-  console.log(`    Task non-Epic totali: ${nonEpics.length}`);
-  console.log(`    con Start date popolata: ${conStart} / ${nonEpics.length}`);
-  console.log(`    con Due date popolata:   ${conDue} / ${nonEpics.length}`);
-
-  // Sample dei 5 più recenti (in fondo all'array, fetch è ORDER BY created ASC)
-  const recenti = nonEpics.slice(-5);
-  if (recenti.length) {
-    console.log(`    Ultimi 5 task non-Epic creati (per debug):`);
-    recenti.forEach(it => {
-      const f = it.fields || {};
-      const sRaw = f[resolvedStartDateField];
-      console.log(`      ${it.key.padEnd(12)} start=${JSON.stringify(sRaw) || 'null'}  due=${JSON.stringify(f.duedate) || 'null'}`);
-    });
-  }
-  // Se Start risulta sempre null ma esistono Due date popolate, scarica
-  // l'ultima issue con TUTTI i campi (la search/jql restituisce solo i
-  // campi richiesti) per individuare il custom field giusto.
-  if (conStart === 0 && conDue > 0 && nonEpics.length > 0) {
-    const lastKey = nonEpics[nonEpics.length - 1].key;
-    console.log(`    ⚠ Tutti i task hanno Start = null ma alcuni hanno Due popolata.`);
-    console.log(`    Scarico ${lastKey} con TUTTI i campi per identificare quello giusto...`);
-    try {
-      const full = await jiraRequest(`/rest/api/3/issue/${encodeURIComponent(lastKey)}?fields=*all`);
-      console.log(`    Campi non vuoti su ${lastKey} che potrebbero essere "Start date":`);
-      Object.entries(full.fields || {}).forEach(([k, v]) => {
-        if (v === null || v === undefined || v === '') return;
-        if (Array.isArray(v) && v.length === 0) return;
-        if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) return;
-        // Concentrati sui customfield e su campi data
-        const isDateLike = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
-        if (k.startsWith('customfield_') || isDateLike) {
-          const preview = typeof v === 'string' ? v.slice(0, 30) : JSON.stringify(v).slice(0, 60);
-          console.log(`      ${k}  =  ${preview}`);
-        }
-      });
-      console.log(`    Trovato il campo Start date qui sopra? Settalo come secret JIRA_START_DATE_FIELD nel repo GitHub.`);
-    } catch (e) {
-      console.log(`    Impossibile fare il dump (${e.message}).`);
-    }
-  }
-
-  // Riutilizzo lo statoPre letto prima del push (le scritture su Firestore
-  // avvengono solo dal frontend, lo script non lo modifica fino al set finale)
+  // ===== MODALITÀ PULL / BOTH: fetch da Jira (loop multi-progetto) =====
   const stato = statoPre || { persone: [], task: [], festivita: [] };
   if (!Array.isArray(stato.task))    stato.task = [];
   if (!Array.isArray(stato.persone)) stato.persone = [];
 
-  const byJiraKey = new Map(stato.task.filter(t => t.jiraKey).map(t => [t.jiraKey, t]));
-  const maxOrdine = stato.task.reduce((m, t) => Math.max(m, Number(t.ordine) || 0), 0);
-  let nextOrdine = maxOrdine + 1;
   const personeNuove = [];
+  let creatiTot = 0, aggiornatiTot = 0;
 
-  // 1st pass: build task + merge assegnazioni
-  const jiraKeyToTask = new Map();
-  let creati = 0, aggiornati = 0;
-  for (const issue of issues) {
-    const existing = byJiraKey.get(issue.key);
-    const task = buildTask(issue, existing, nextOrdine);
-    if (!existing) { creati++; nextOrdine++; } else { aggiornati++; }
-    const daJira     = resolveAssignee(issue, stato.persone, personeNuove);
-    const esistenti  = existing ? (existing.assegnazioni || []) : [];
-    task.assegnazioni = mergeAssegnazioni(daJira, esistenti);
-    jiraKeyToTask.set(issue.key, task);
-  }
-
-  // 2nd pass: risolvi parent. In ordine:
-  //   1. fields.parent.key (next-gen, sub-task->parent, Story->Epic moderno)
-  //   2. fields[customfield_10014] (Epic Link classico: Story->Epic)
-  let orphans = 0;
-  for (const issue of issues) {
-    const direct = issue.fields?.parent?.key;
-    const epicLink = issue.fields?.[EPIC_LINK_FIELD] || null;
-    const parentKey = direct || epicLink;
-    if (!parentKey) continue;
-    if (jiraKeyToTask.has(parentKey)) {
-      jiraKeyToTask.get(issue.key).parentId = jiraKeyToTask.get(parentKey).id;
-    } else {
-      orphans++;
+  // Per ogni progetto: fetch issue, mergea i task di QUEL progetto, lascia
+  // intatti i task degli altri progetti e quelli manuali.
+  for (const projectKey of projectKeys) {
+    console.log(`\n▶ Progetto: ${projectKey}`);
+    console.log(`  Fetch issue da Jira...`);
+    let issues;
+    try {
+      issues = await fetchAllIssues(projectKey);
+    } catch (e) {
+      console.log(`  ✗ Fetch fallito: ${e.message}. Salto il progetto.`);
+      continue;
     }
-  }
-  if (orphans > 0) {
-    console.log(`  ⚠ ${orphans} issue hanno un parent fuori dal progetto importato (resteranno top-level)`);
+    console.log(`  ✓ ${issues.length} issue ricevute per ${projectKey}`);
+
+    // Diagnostica date sulle issue del progetto corrente
+    const nonEpics = issues.filter(it => it.fields?.issuetype?.name !== 'Epic');
+    const conStart = nonEpics.filter(it => it.fields?.[resolvedStartDateField]).length;
+    const conDue   = nonEpics.filter(it => it.fields?.duedate).length;
+    console.log(`  Date: ${conStart}/${nonEpics.length} con Start, ${conDue}/${nonEpics.length} con Due`);
+
+    // Indice dei task ESISTENTI di QUESTO progetto (per merge per jiraKey)
+    const byJiraKey = new Map(
+      stato.task.filter(t => t.jiraKey && t.jiraProject === projectKey)
+        .map(t => [t.jiraKey, t])
+    );
+    const maxOrdine = stato.task.reduce((m, t) => Math.max(m, Number(t.ordine) || 0), 0);
+    let nextOrdine = maxOrdine + 1;
+
+    // 1st pass: build task + merge assegnazioni
+    const jiraKeyToTask = new Map();
+    let creati = 0, aggiornati = 0;
+    for (const issue of issues) {
+      const existing = byJiraKey.get(issue.key);
+      const task = buildTask(issue, existing, nextOrdine, projectKey);
+      if (!existing) { creati++; nextOrdine++; } else { aggiornati++; }
+      const daJira    = resolveAssignee(issue, stato.persone, personeNuove);
+      const esistenti = existing ? (existing.assegnazioni || []) : [];
+      task.assegnazioni = mergeAssegnazioni(daJira, esistenti);
+      jiraKeyToTask.set(issue.key, task);
+    }
+
+    // 2nd pass: risolvi parent (parent.key o customfield_10014)
+    let orphans = 0;
+    for (const issue of issues) {
+      const direct   = issue.fields?.parent?.key;
+      const epicLink = issue.fields?.[EPIC_LINK_FIELD] || null;
+      const parentKey = direct || epicLink;
+      if (!parentKey) continue;
+      if (jiraKeyToTask.has(parentKey)) {
+        jiraKeyToTask.get(issue.key).parentId = jiraKeyToTask.get(parentKey).id;
+      } else {
+        orphans++;
+      }
+    }
+    if (orphans > 0) {
+      console.log(`  ⚠ ${orphans} issue con parent fuori dal progetto ${projectKey} (top-level)`);
+    }
+
+    // Sostituisco i task di QUESTO progetto con quelli nuovi (manuali e
+    // altri-progetto restano intoccati). Tutto coerente con i jiraProject tag.
+    const altri = stato.task.filter(t => !t.jiraKey || t.jiraProject !== projectKey);
+    stato.task = [...altri, ...jiraKeyToTask.values()];
+    console.log(`  ${projectKey}: ${creati} nuovi, ${aggiornati} aggiornati`);
+    creatiTot += creati;
+    aggiornatiTot += aggiornati;
   }
 
-  // Merge: task manuali (senza jiraKey) preservati intoccati, jira-tasks ricostruiti
-  const taskManuali = stato.task.filter(t => !t.jiraKey);
-  const taskJira = [...jiraKeyToTask.values()];
-  stato.task = [...taskManuali, ...taskJira];
   stato.persone = [...stato.persone, ...personeNuove];
 
-  console.log(`▶ Scrittura su Firestore: ${stato.task.length} task totali (${taskManuali.length} manuali + ${taskJira.length} da Jira)`);
+  console.log(`\n▶ Scrittura su Firestore: ${stato.task.length} task totali`);
   await docRef.set(stato);
 
   console.log('');
   console.log(`✅ Sync completato`);
-  console.log(`   ${creati} task nuovi`);
-  console.log(`   ${aggiornati} task aggiornati`);
+  console.log(`   ${creatiTot} task nuovi (totale su tutti i progetti)`);
+  console.log(`   ${aggiornatiTot} task aggiornati`);
   console.log(`   ${personeNuove.length} persone auto-create`);
 }
 

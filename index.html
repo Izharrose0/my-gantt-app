@@ -39,6 +39,7 @@
             <button type="button" class="kebab-item kebab-nav" data-nav="persone">Persone</button>
             <div class="kebab-divider"></div>
           </div>
+          <button type="button" class="kebab-item only-owner" id="btn-progetti-jira">Progetti Jira</button>
           <button type="button" class="kebab-item only-owner" id="btn-pull-jira">Pull da Jira → MY-GANTT</button>
           <button type="button" class="kebab-item only-owner" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
@@ -227,6 +228,7 @@
             <option value="done">Done</option>
             <option value="blocked">Blocked</option>
           </select></label>
+          <label class="filter-item">Progetto Jira <select class="filter-progetto"><option value="">— Tutti —</option></select></label>
           <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
           <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
           <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
@@ -304,6 +306,7 @@
             <option value="done">Done</option>
             <option value="blocked">Blocked</option>
           </select></label>
+          <label class="filter-item">Progetto Jira <select class="filter-progetto"><option value="">— Tutti —</option></select></label>
           <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
           <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
           <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
@@ -338,6 +341,7 @@
             <option value="done">Done</option>
             <option value="blocked">Blocked</option>
           </select></label>
+          <label class="filter-item">Progetto Jira <select class="filter-progetto"><option value="">— Tutti —</option></select></label>
           <label class="filter-item">Epica <select class="filter-epica"><option value="">— Tutte —</option></select></label>
           <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
         </div>
@@ -512,6 +516,26 @@
         </div>
         <button type="submit" class="btn btn-primary">Salva modifiche</button>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL PROGETTI JIRA =================== -->
+  <div id="modal-progetti-jira-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Progetti Jira sincronizzati</h3>
+        <button class="btn-close" id="btn-chiudi-modal-progetti-jira" type="button">×</button>
+      </header>
+      <p class="hint">
+        Inserisci le project key Jira (es. <code>REN</code>, <code>PROJ</code>) da importare.
+        Ogni progetto verrà sincronizzato separatamente al prossimo Pull.
+        I task di un progetto rimosso da qui restano in MY-GANTT ma non vengono più aggiornati.
+      </p>
+      <form id="form-progetti-jira-add" class="form-inline" style="margin-bottom:0.6rem">
+        <input type="text" id="progetti-jira-nuovo" placeholder="PROJECT_KEY (es. REN)" required>
+        <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+      </form>
+      <ul id="lista-progetti-jira" class="lista"></ul>
     </div>
   </div>
 

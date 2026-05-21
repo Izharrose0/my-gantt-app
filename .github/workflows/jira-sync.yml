@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       project_key:
-        description: 'Project key Jira (lascia vuoto per usare JIRA_PROJECT_KEY del secret)'
+        description: 'Override project keys (comma-separated, es. REN,PROJ). Vuoto = usa /config/jira.projects o JIRA_PROJECT_KEY.'
         required: false
         type: string
         default: ''

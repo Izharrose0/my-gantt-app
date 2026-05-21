@@ -3260,6 +3260,28 @@ body[data-locked="true"] .app-header .actions-top {
   .assoc-azione .assoc-target { flex: 1; min-width: 0; max-width: none; }
 }
 
+/* Visibilità epiche: gruppi per progetto (modal "Gestisci visibilità") */
+.vis-group { list-style: none; padding: 0; margin: 0 0 0.4rem; }
+.vis-group details {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+.vis-group details[open] { padding-bottom: 0.4rem; }
+.vis-group summary {
+  cursor: pointer;
+  padding: 0.4rem 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  user-select: none;
+}
+.vis-group summary > strong { font-size: 0.9rem; }
+.vis-group-actions { display: inline-flex; gap: 0.4rem; }
+.vis-sublist { list-style: none; padding: 0; margin: 0.2rem 0 0; }
+
 /* Visibilità epiche: modal "Gestisci visibilità" */
 .vis-row {
   padding: 0.5rem 0.7rem;

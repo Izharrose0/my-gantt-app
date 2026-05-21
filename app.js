@@ -124,6 +124,18 @@ function inizializzaAuth() {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
 
+  // Click "Progetti Jira" → modal di gestione
+  document.getElementById('btn-progetti-jira')?.addEventListener('click', apriModaleProgettiJira);
+  document.getElementById('btn-chiudi-modal-progetti-jira')?.addEventListener('click', () => {
+    document.getElementById('modal-progetti-jira-overlay').classList.add('hidden');
+  });
+  document.getElementById('form-progetti-jira-add')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const input = document.getElementById('progetti-jira-nuovo');
+    await aggiungiProgettoJira(input.value);
+    input.value = '';
+  });
+
   // Click "Pull da Jira" → triggera il workflow via API e monitora lo stato
   document.getElementById('btn-pull-jira')?.addEventListener('click', () =>
     triggeraWorkflow('jira-sync.yml', 'Pull da Jira'));
@@ -167,6 +179,92 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== GESTIONE PROGETTI JIRA =====
+// La lista di project key da sincronizzare e' storata in Firestore:
+// collection "config", doc "jira", campo "projects" (array di stringhe).
+// Lo script di sync legge da qui.
+
+const CONFIG_JIRA_PATH = ['config', 'jira'];
+
+async function caricaProgettiJira() {
+  const fb = window.__firebase;
+  if (!fb || !fb.db || !fb.doc) return { projects: [] };
+  try {
+    const ref = fb.doc(fb.db, ...CONFIG_JIRA_PATH);
+    const { getDoc } = await import('https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js');
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return { projects: [] };
+    const data = snap.data() || {};
+    return { projects: Array.isArray(data.projects) ? data.projects : [] };
+  } catch (e) {
+    console.warn('caricaProgettiJira:', e);
+    return { projects: [] };
+  }
+}
+
+async function salvaProgettiJira(projects) {
+  const fb = window.__firebase;
+  if (!fb || !fb.db || !fb.doc || !fb.setDoc) return false;
+  try {
+    const ref = fb.doc(fb.db, ...CONFIG_JIRA_PATH);
+    await fb.setDoc(ref, { projects }, { merge: true });
+    return true;
+  } catch (e) {
+    alert('Salvataggio fallito: ' + (e.message || e.code || e));
+    return false;
+  }
+}
+
+async function apriModaleProgettiJira() {
+  document.getElementById('modal-progetti-jira-overlay').classList.remove('hidden');
+  await renderListaProgettiJira();
+}
+
+async function renderListaProgettiJira() {
+  const ul = document.getElementById('lista-progetti-jira');
+  if (!ul) return;
+  ul.innerHTML = '<li class="empty-state">Caricamento…</li>';
+  const cfg = await caricaProgettiJira();
+  if (!cfg.projects.length) {
+    ul.innerHTML = '<li class="empty-state">Nessun progetto configurato. Aggiungine uno per iniziare a sincronizzare.</li>';
+    return;
+  }
+  ul.innerHTML = cfg.projects.slice().sort().map(p => {
+    const n = stato.task.filter(t => t.jiraProject === p).length;
+    return `
+      <li class="acc-row">
+        <div><code>${escapeHtml(p)}</code> <small style="color:var(--color-text-muted)">${n} task importati</small></div>
+        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-proj="${escapeHtml(p)}">Rimuovi</button>
+      </li>`;
+  }).join('');
+  ul.querySelectorAll('[data-rimuovi-proj]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.rimuoviProj;
+      if (!confirm(`Rimuovere il progetto "${p}" dalla lista di sync?\n\nI task gia' importati restano in MY-GANTT (non vengono cancellati). Per cancellarli usa "Gestisci visibilita' epiche".`)) return;
+      const cfg = await caricaProgettiJira();
+      const updated = cfg.projects.filter(x => x !== p);
+      if (await salvaProgettiJira(updated)) renderListaProgettiJira();
+    });
+  });
+}
+
+async function aggiungiProgettoJira(key) {
+  const k = (key || '').trim().toUpperCase();
+  if (!k) return;
+  const cfg = await caricaProgettiJira();
+  if (cfg.projects.includes(k)) {
+    alert(`Il progetto "${k}" e' gia' configurato.`);
+    return;
+  }
+  const updated = [...cfg.projects, k];
+  if (await salvaProgettiJira(updated)) renderListaProgettiJira();
+}
+
+// Restituisce l'elenco unico dei project key presenti nei task importati
+function progettiPresenti() {
+  return [...new Set(stato.task.map(t => t.jiraProject).filter(Boolean))].sort();
 }
 
 // ===== GESTIONE ACCESSI (WHITELIST EMAIL) =====
@@ -524,30 +622,65 @@ function setVisibilitaTutte(nascosta) {
 function renderListaVisibilita() {
   const cont = document.getElementById('lista-visibilita-epiche');
   if (!cont) return;
-  const epiche = stato.task
-    .filter(t => t.tipo === 'epica')
-    .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  const epiche = stato.task.filter(t => t.tipo === 'epica');
   if (!epiche.length) {
     cont.innerHTML = '<li class="empty-state">Nessuna epica trovata.</li>';
     return;
   }
-  cont.innerHTML = epiche.map(e => {
-    const figli = stato.task.filter(t => t.parentId === e.id).length;
-    const visibile = !e.nascosta;
-    const badge = e.jiraKey
-      ? `<span class="label-fte epica-badge" title="Importata da Jira">${escapeHtml(e.jiraKey)}</span>`
-      : '<span class="label-fte" title="Creata manualmente">manuale</span>';
+
+  // Raggruppa per jiraProject (con sezione "Manuali" per le epiche senza progetto)
+  const gruppi = new Map();
+  epiche.forEach(e => {
+    const key = e.jiraProject || (e.jiraKey ? String(e.jiraKey).split('-')[0] : '__manual__');
+    if (!gruppi.has(key)) gruppi.set(key, []);
+    gruppi.get(key).push(e);
+  });
+  // Ordina: prima i progetti Jira alfabetici, poi "Manuali" in fondo
+  const ordineGruppi = [...gruppi.keys()].sort((a, b) => {
+    if (a === '__manual__') return 1;
+    if (b === '__manual__') return -1;
+    return a.localeCompare(b);
+  });
+
+  const sezioni = ordineGruppi.map(groupKey => {
+    const lista = gruppi.get(groupKey).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    const visibili = lista.filter(e => !e.nascosta).length;
+    const titolo = groupKey === '__manual__'
+      ? `Manuali (${visibili}/${lista.length})`
+      : `${groupKey} — Jira (${visibili}/${lista.length})`;
+    const righe = lista.map(e => {
+      const figli = stato.task.filter(t => t.parentId === e.id).length;
+      const visibile = !e.nascosta;
+      const badge = e.jiraKey
+        ? `<span class="label-fte epica-badge" title="Importata da Jira">${escapeHtml(e.jiraKey)}</span>`
+        : '<span class="label-fte" title="Creata manualmente">manuale</span>';
+      return `
+        <li class="vis-row${visibile ? '' : ' vis-hidden'}">
+          <label class="vis-toggle">
+            <input type="checkbox" data-vis-id="${e.id}" ${visibile ? 'checked' : ''}>
+            <span class="vis-name">${escapeHtml(e.nome)}</span>
+            ${badge}
+            <span class="label-fte" title="Numero figli diretti">${figli} task</span>
+          </label>
+        </li>`;
+    }).join('');
     return `
-      <li class="vis-row${visibile ? '' : ' vis-hidden'}">
-        <label class="vis-toggle">
-          <input type="checkbox" data-vis-id="${e.id}" ${visibile ? 'checked' : ''}>
-          <span class="vis-name">${escapeHtml(e.nome)}</span>
-          ${badge}
-          <span class="label-fte" title="Numero figli diretti">${figli} task</span>
-        </label>
+      <li class="vis-group">
+        <details ${visibili < lista.length ? '' : 'open'}>
+          <summary>
+            <strong>${escapeHtml(titolo)}</strong>
+            <span class="vis-group-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-gruppo-tutti="${escapeHtml(groupKey)}">Tutti</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-gruppo-nessuno="${escapeHtml(groupKey)}">Nessuno</button>
+            </span>
+          </summary>
+          <ul class="vis-sublist">${righe}</ul>
+        </details>
       </li>`;
   }).join('');
+  cont.innerHTML = sezioni;
 
+  // Toggle singolo
   cont.querySelectorAll('input[data-vis-id]').forEach(cb => {
     cb.addEventListener('change', () => {
       const t = stato.task.find(x => x.id === cb.dataset.visId);
@@ -558,6 +691,25 @@ function renderListaVisibilita() {
       aggiornaViste();
     });
   });
+  // Bulk per gruppo
+  cont.querySelectorAll('[data-gruppo-tutti]').forEach(b => {
+    b.addEventListener('click', e => { e.preventDefault(); bulkVisibilitaGruppo(b.dataset.gruppoTutti, true); });
+  });
+  cont.querySelectorAll('[data-gruppo-nessuno]').forEach(b => {
+    b.addEventListener('click', e => { e.preventDefault(); bulkVisibilitaGruppo(b.dataset.gruppoNessuno, false); });
+  });
+}
+
+function bulkVisibilitaGruppo(groupKey, visibili) {
+  stato.task.forEach(t => {
+    if (t.tipo !== 'epica') return;
+    const key = t.jiraProject || (t.jiraKey ? String(t.jiraKey).split('-')[0] : '__manual__');
+    if (key !== groupKey) return;
+    t.nascosta = !visibili;
+  });
+  salvaStato();
+  renderListaVisibilita();
+  aggiornaViste();
 }
 
 // ID del task in modifica nel modal
@@ -607,9 +759,9 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (transienti, indipendenti per vista)
 let filtri = {
-  gantt:      { persone: [], stati: [], epica: '', dataDa: '', dataA: '' },
-  workload:   { persone: [], stati: [], epica: '', dataDa: '', dataA: '' },
-  eisenhower: { persone: [], stati: [], epica: '', dataDa: '', dataA: '' }
+  gantt:      { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' },
+  workload:   { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' },
+  eisenhower: { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' }
 };
 
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
@@ -857,6 +1009,7 @@ function contaFiltriAttivi(view) {
   if (f.persone?.length) n++;
   if (f.stati?.length)   n++;
   if (f.epica)            n++;
+  if (f.progetto)         n++;
   if (f.dataDa || f.dataA) n++;
   return n;
 }
@@ -1000,6 +1153,15 @@ function popolaFiltri() {
         .join('');
     }
 
+    // Progetti Jira
+    const selProj = bar.querySelector('.filter-progetto');
+    if (selProj) {
+      const progetti = progettiPresenti();
+      selProj.innerHTML = `<option value="">— Tutti —</option>` + progetti
+        .map(p => `<option value="${escapeHtml(p)}" ${f.progetto === p ? 'selected' : ''}>${escapeHtml(p)}</option>`)
+        .join('');
+    }
+
     // Stati (statici, ma reimposta selected)
     bar.querySelectorAll('.filter-stato option').forEach(o => {
       o.selected = f.stati.includes(o.value);
@@ -1028,6 +1190,11 @@ function taskNascosto(t) {
 
 function passaFiltri(t, f) {
   if (taskNascosto(t)) return false;
+  // Filtro progetto Jira: applicato a tutti i tipi (epica/task/milestone).
+  // I task manuali (no jiraProject) passano solo se non c'e' filtro.
+  if (f.progetto) {
+    if ((t.jiraProject || '') !== f.progetto) return false;
+  }
   if (f.stati.length && !f.stati.includes(t.stato) && t.tipo !== 'epica') return false;
   if (f.persone.length) {
     if (t.tipo === 'epica') {
@@ -1377,8 +1544,10 @@ function migraStato(dati) {
       importanza: Number.isFinite(imp) && imp >= 1 ? Math.min(4, imp) : 3,
       // Visibilità: true = task/epica nascosta da Gantt/Workload/Eisenhower
       nascosta:   t.nascosta === true,
-      // Campi Jira (preservati se presenti)
+      // Campi Jira (preservati se presenti). Per backward-compat, se manca
+      // jiraProject ma c'e' jiraKey lo deduco dal prefisso "PROJ-123" -> "PROJ".
       jiraKey:           t.jiraKey || null,
+      jiraProject:       t.jiraProject || (t.jiraKey ? String(t.jiraKey).split('-')[0] : null),
       jiraUrl:           t.jiraUrl || null,
       jiraUpdated:       t.jiraUpdated || null,
       // Snapshot delle date all'ultimo sync da Jira: serve a sapere se
@@ -4516,6 +4685,10 @@ function inizializza() {
       filtri[vista].epica = e.target.value;
       rerenderVista(vista);
     });
+    bar.querySelector('.filter-progetto')?.addEventListener('change', e => {
+      filtri[vista].progetto = e.target.value;
+      rerenderVista(vista);
+    });
     bar.querySelector('.filter-data-da')?.addEventListener('change', e => {
       filtri[vista].dataDa = e.target.value;
       rerenderVista(vista);
@@ -4525,9 +4698,10 @@ function inizializza() {
       rerenderVista(vista);
     });
     bar.querySelector('.filter-reset')?.addEventListener('click', () => {
-      filtri[vista].persone = [];
-      filtri[vista].stati   = [];
-      filtri[vista].epica   = '';
+      filtri[vista].persone  = [];
+      filtri[vista].stati    = [];
+      filtri[vista].epica    = '';
+      filtri[vista].progetto = '';
       const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
       filtri[vista].dataA   = def.dataA;
