@@ -1140,6 +1140,12 @@ function salvaStato() {
     return;
   }
 
+  // Audit log lightweight: chi ha fatto l'ultima modifica e quando
+  stato.metadata = {
+    lastModifiedBy: utenteCorrente?.email || 'sconosciuto',
+    lastModifiedAt: new Date().toISOString()
+  };
+
   impostaSyncStato('saving');
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
@@ -1149,11 +1155,25 @@ function salvaStato() {
       const payload = JSON.parse(JSON.stringify(stato));
       await setDoc(doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC), payload);
       impostaSyncStato('connected');
+      aggiornaTooltipUltimaModifica();
     } catch (e) {
       console.error('Firestore save error:', e);
       impostaSyncStato('error');
     }
   }, 400); // debounce 400ms — accumula mini-modifiche prima del save
+}
+
+// Mostra "ultima modifica" come tooltip sull'indicatore sync
+function aggiornaTooltipUltimaModifica() {
+  const el = document.getElementById('sync-indicator');
+  if (!el || !stato.metadata) return;
+  const ts = stato.metadata.lastModifiedAt;
+  const by = stato.metadata.lastModifiedBy;
+  if (ts && by) {
+    const dt = new Date(ts);
+    const fmt = dt.toLocaleString('it-IT');
+    el.title = `Ultima modifica: ${fmt} da ${by}`;
+  }
 }
 
 function caricaStato() {
@@ -1217,10 +1237,12 @@ function avviaSyncFirestore() {
       stato.persone   = remoto.persone   || [];
       stato.task      = remoto.task      || [];
       stato.festivita = remoto.festivita || [];
+      stato.metadata  = remoto.metadata  || null;
       // Alla prima snapshot collassa tutte le epiche (anche se sono arrivate da remoto)
       collassaTutteEpicheInizialmente();
       // Cache locale aggiornata
       try { localStorage.setItem('gantt-app-stato', JSON.stringify(stato)); } catch {}
+      aggiornaTooltipUltimaModifica();
       aggiornaViste();
       impostaSyncStato('connected');
     } catch (e) {
