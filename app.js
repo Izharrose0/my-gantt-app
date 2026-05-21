@@ -3751,6 +3751,41 @@ function chiudiModaleGiorno() {
   document.getElementById('modal-giorno-overlay').classList.add('hidden');
 }
 
+// Riordina le epiche top-level (parentId=null) in base al loro punteggio
+// Eisenhower (importanza + urgenza, desc). I task non-epica restano dove
+// sono (l'ordine all'interno di un'epica non viene toccato).
+function ordinaEpichePerEisenhower() {
+  if (!isOwner()) return;
+  const epiche = stato.task
+    .filter(t => t.tipo === 'epica' && !t.parentId)
+    .slice()
+    .sort((a, b) => {
+      const sa = (Number(a.importanza) || 3) + (Number(a.urgenza) || 3);
+      const sb = (Number(b.importanza) || 3) + (Number(b.urgenza) || 3);
+      if (sb !== sa) return sb - sa;
+      return (a.nome || '').localeCompare(b.nome || '');
+    });
+  if (!epiche.length) {
+    mostraToast('Nessuna epica top-level da riordinare.', 'info');
+    return;
+  }
+  // Assegno nuovi `ordine` partendo da 0. Le altre task top-level (es. task
+  // singole non sotto epica, milestone) le metto in coda mantenendo il loro
+  // ordine relativo precedente.
+  const altreTop = stato.task
+    .filter(t => !t.parentId && t.tipo !== 'epica')
+    .slice()
+    .sort((a, b) => (Number(a.ordine) || 0) - (Number(b.ordine) || 0));
+
+  let i = 0;
+  epiche.forEach(t => { t.ordine = i++; });
+  altreTop.forEach(t => { t.ordine = i++; });
+
+  salvaStato();
+  aggiornaViste();
+  mostraToast(`✅ ${epiche.length} epiche riordinate per Eisenhower.`, 'success');
+}
+
 // ===== MATRICE DI EISENHOWER =====
 
 // Quadrante di un task in base a importanza/urgenza (soglia >= 3 = alto)
@@ -4393,6 +4428,9 @@ function inizializza() {
     renderWeekStrip();
     scrollAOggi();
   });
+
+  // --- Ordina epiche per Eisenhower (importanza + urgenza) ---
+  document.getElementById('btn-ordina-eisen')?.addEventListener('click', ordinaEpichePerEisenhower);
 
   // --- Week strip nav prev/next (Gantt + Workload) ---
   document.querySelectorAll('.week-nav').forEach(btn => {
