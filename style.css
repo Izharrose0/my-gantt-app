@@ -2865,6 +2865,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
    ===== MATRICE DI EISENHOWER =========================================
    ===================================================================== */
 
+/* Toolbar Eisenhower: select progetto */
+.eisen-progetto-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-left: 0.7rem;
+}
+.eisen-progetto-label select {
+  font-size: 0.8rem;
+  padding: 0.32rem 0.5rem;
+  min-width: 120px;
+  max-width: 180px;
+}
+@media (max-width: 560px) {
+  .eisen-progetto-label { font-size: 0.7rem; margin-left: 0.3rem; }
+  .eisen-progetto-label select { min-width: 90px; max-width: 140px; }
+}
+
 /* Piano cartesiano Eisenhower 4x4 */
 #eisen-container {
   display: grid;

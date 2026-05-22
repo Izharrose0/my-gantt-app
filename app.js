@@ -767,6 +767,18 @@ let filtri = {
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
 let eisenModo = 'epiche';
 
+// Popola la tendina "Progetto" nella toolbar Eisenhower con i progetti
+// effettivamente presenti nei dati. Mantiene la selezione corrente.
+function popolaSelectProgettoEisen() {
+  const sel = document.getElementById('eisen-progetto-select');
+  if (!sel) return;
+  const progetti = progettiPresenti();
+  const current = filtri.eisenhower.progetto || '';
+  sel.innerHTML = `<option value="">— Tutti —</option>` + progetti
+    .map(p => `<option value="${escapeHtml(p)}" ${current === p ? 'selected' : ''}>${escapeHtml(p)}</option>`)
+    .join('');
+}
+
 // Helper: formato ISO YYYY-MM-DD
 function _fmtISODate(d) {
   const pad = n => String(n).padStart(2, '0');
@@ -4009,6 +4021,9 @@ function renderEisenhower() {
   const container = document.getElementById('eisen-container');
   if (!container) return;
 
+  // Popola e sincronizza il select progetto della toolbar Eisenhower
+  popolaSelectProgettoEisen();
+
   const ammessi = taskAmmessi(filtri.eisenhower);
   // Filtra in base alla modalità selezionata (epiche / task / tutti)
   let elenco = stato.task.filter(t => {
@@ -4802,6 +4817,15 @@ function inizializza() {
         b.classList.toggle('active', b.dataset.eisenMode === eisenModo));
       renderEisenhower();
     });
+  });
+  // Eisenhower: filtro progetto direttamente nella toolbar
+  document.getElementById('eisen-progetto-select')?.addEventListener('change', e => {
+    filtri.eisenhower.progetto = e.target.value;
+    // Allinea anche la filter-bar piena (cosi' il chip "Filtri" mostra il badge giusto)
+    const fb = document.querySelector('.filter-bar[data-view-filter="eisenhower"] .filter-progetto');
+    if (fb) fb.value = e.target.value;
+    aggiornaBadgeFiltri();
+    renderEisenhower();
   });
   document.getElementById('bs-close').addEventListener('click', chiudiBottomSheet);
   document.querySelector('#bottom-sheet-filtri .bs-backdrop')
