@@ -835,9 +835,9 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (transienti, indipendenti per vista)
 let filtri = {
-  gantt:      { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' },
-  workload:   { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' },
-  eisenhower: { persone: [], stati: [], epica: '', progetto: '', dataDa: '', dataA: '' }
+  gantt:      { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
+  workload:   { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
+  eisenhower: { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
 };
 
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
@@ -968,6 +968,7 @@ function renderReportSettimana() {
           <th>Capacità</th>
           <th>Allocate</th>
           <th>Carico</th>
+          <th>% Progetto</th>
           <th>Task assegnati</th>
         </tr>
       </thead>
@@ -979,6 +980,21 @@ function renderReportSettimana() {
           const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
           // Nascondi task con 0h di allocazione (niente valore nel report)
           const itemsConOre = items.filter(it => it.ore > 0);
+
+          // Allocazione % per progetto Jira
+          const orPerProg = {};
+          itemsConOre.forEach(it => {
+            const task = stato.task.find(t => t.id === it.taskId);
+            const proj = task?.jiraProject || 'Manuale';
+            orPerProg[proj] = (orPerProg[proj] || 0) + it.ore;
+          });
+          const progettiAlloc = Object.entries(orPerProg)
+            .sort((a, b) => b[1] - a[1])
+            .map(([proj, ore]) => {
+              const pct = totaleH > 0 ? Math.round(ore / totaleH * 100) : 0;
+              return `<span class="report-proj-badge">${escapeHtml(proj)} ${pct}%</span>`;
+            }).join(' ');
+
           const taskList = itemsConOre.length
             ? itemsConOre.map(it =>
                 `<div class="report-task-item">${escapeHtml(it.taskNome)} — <strong>${it.ore.toFixed(1)}h</strong> <small>(${it.giorni} gg)</small></div>`
@@ -994,6 +1010,7 @@ function renderReportSettimana() {
               <td><strong>${capacita.toFixed(0)}h</strong><br><small>${ggLavPersona} gg</small></td>
               <td><strong>${totaleH.toFixed(1)}h</strong></td>
               <td><span class="report-perc ${cls}">${perc}%</span></td>
+              <td class="report-proj-cell">${progettiAlloc || '—'}</td>
               <td class="report-task-cell">${taskList}</td>
             </tr>`;
         }).join('')}
@@ -1100,6 +1117,7 @@ function contaFiltriAttivi(view) {
   if (f.stati?.length)   n++;
   if (f.epica)            n++;
   if (f.progetto)         n++;
+  if (f.team)             n++;
   if (f.dataDa || f.dataA) n++;
   return n;
 }
@@ -1240,6 +1258,15 @@ function popolaFiltri() {
       const epiche = stato.task.filter(t => t.tipo === 'epica');
       selE.innerHTML = `<option value="">— Tutte —</option>` + epiche
         .map(e => `<option value="${e.id}" ${f.epica === e.id ? 'selected' : ''}>${escapeHtml(e.nome)}</option>`)
+        .join('');
+    }
+
+    // Team
+    const selTeam = bar.querySelector('.filter-team');
+    if (selTeam) {
+      selTeam.innerHTML = `<option value="">— Tutti —</option>` + stato.team
+        .slice().sort((a, b) => (a.ordine || 0) - (b.ordine || 0))
+        .map(tm => `<option value="${tm.id}" ${f.team === tm.id ? 'selected' : ''}>${escapeHtml(tm.nome)}</option>`)
         .join('');
     }
 
@@ -3807,6 +3834,10 @@ function renderWorkload() {
   let personeMostrate = filtri.workload.persone.length
     ? stato.persone.filter(p => filtri.workload.persone.includes(p.id))
     : stato.persone.slice();
+  // Filtro team: se attivo, mostra solo le persone di quel team
+  if (filtri.workload.team) {
+    personeMostrate = personeMostrate.filter(p => p.teamId === filtri.workload.team);
+  }
 
   // Ordina per: team.ordine → persona.ordine → nome. Non assegnati (teamId null) in fondo.
   const teamOrdMap = new Map(stato.team.map(t => [t.id, t.ordine || 0]));
@@ -4861,6 +4892,10 @@ function inizializza() {
       filtri[vista].epica = e.target.value;
       rerenderVista(vista);
     });
+    bar.querySelector('.filter-team')?.addEventListener('change', e => {
+      filtri[vista].team = e.target.value;
+      rerenderVista(vista);
+    });
     bar.querySelector('.filter-progetto')?.addEventListener('change', e => {
       filtri[vista].progetto = e.target.value;
       rerenderVista(vista);
@@ -4878,6 +4913,7 @@ function inizializza() {
       filtri[vista].stati    = [];
       filtri[vista].epica    = '';
       filtri[vista].progetto = '';
+      filtri[vista].team     = '';
       const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
       filtri[vista].dataA   = def.dataA;

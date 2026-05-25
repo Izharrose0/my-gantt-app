@@ -2865,6 +2865,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
    ===== MATRICE DI EISENHOWER =========================================
    ===================================================================== */
 
+/* Report settimanale: allocazione per progetto */
+.report-proj-cell { white-space: normal; }
+.report-proj-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-3);
+  color: var(--color-text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin: 1px 2px;
+  white-space: nowrap;
+}
+
 /* Workload: header team */
 .wl-team-header {
   background: var(--color-surface-3) !important;
