@@ -1,8 +1,9 @@
 // ===== STATO APPLICAZIONE =====
 // Dati in memoria, sincronizzati con localStorage ad ogni modifica
 let stato = {
-  persone: [],   // [{ id, nome, ruolo, fte, colore }]
-  task: []       // [{ id, nome, inizio, fine, assegnazioni: [{personaId, effort}], stato }]
+  persone: [],   // [{ id, nome, ruolo, fte, colore, teamId, ordine }]
+  task: [],      // [{ id, nome, inizio, fine, assegnazioni: [{personaId, effort}], stato }]
+  team: []       // [{ id, nome, colore, ordine }]
 };
 
 // ===== AUTH / OWNER =====
@@ -124,6 +125,19 @@ function inizializzaAuth() {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
 
+  // Click "Gestisci team" → modal
+  document.getElementById('btn-gestisci-team')?.addEventListener('click', apriModaleTeam);
+  document.getElementById('btn-chiudi-modal-team')?.addEventListener('click', () =>
+    document.getElementById('modal-team-overlay').classList.add('hidden'));
+  document.getElementById('form-team-add')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const nome = document.getElementById('team-nome-nuovo').value.trim();
+    const colore = document.getElementById('team-colore-nuovo').value;
+    if (!nome) return;
+    aggiungiTeam(nome, colore);
+    document.getElementById('team-nome-nuovo').value = '';
+  });
+
   // Click "Progetti Jira" → modal di gestione
   document.getElementById('btn-progetti-jira')?.addEventListener('click', apriModaleProgettiJira);
   document.getElementById('btn-chiudi-modal-progetti-jira')?.addEventListener('click', () => {
@@ -179,6 +193,68 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== GESTIONE TEAM =====
+
+function apriModaleTeam() {
+  renderListaTeam();
+  document.getElementById('modal-team-overlay').classList.remove('hidden');
+}
+
+function renderListaTeam() {
+  const ul = document.getElementById('lista-team');
+  if (!ul) return;
+  if (!stato.team.length) {
+    ul.innerHTML = '<li class="empty-state">Nessun team creato.</li>';
+    return;
+  }
+  ul.innerHTML = stato.team.slice().sort((a, b) => (a.ordine || 0) - (b.ordine || 0)).map(tm => {
+    const n = stato.persone.filter(p => p.teamId === tm.id).length;
+    return `
+      <li class="acc-row">
+        <div style="display:flex;align-items:center;gap:0.6rem">
+          <span style="width:16px;height:16px;border-radius:3px;background:${escapeHtml(tm.colore)};flex-shrink:0"></span>
+          <strong>${escapeHtml(tm.nome)}</strong>
+          <small style="color:var(--color-text-muted)">${n} persone</small>
+        </div>
+        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-team="${tm.id}">Rimuovi</button>
+      </li>`;
+  }).join('');
+  ul.querySelectorAll('[data-rimuovi-team]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.rimuoviTeam;
+      const tm = stato.team.find(t => t.id === id);
+      if (!confirm(`Eliminare il team "${tm?.nome || id}"?\nLe persone torneranno "Non assegnate".`)) return;
+      stato.persone.forEach(p => { if (p.teamId === id) p.teamId = null; });
+      stato.team = stato.team.filter(t => t.id !== id);
+      salvaStato();
+      renderListaTeam();
+      aggiornaViste();
+    });
+  });
+}
+
+function aggiungiTeam(nome, colore) {
+  const maxOrd = stato.team.reduce((m, t) => Math.max(m, t.ordine || 0), 0);
+  stato.team.push({
+    id: generaId(),
+    nome,
+    colore: colore || '#5e6ad2',
+    ordine: maxOrd + 1
+  });
+  salvaStato();
+  renderListaTeam();
+}
+
+// Popola il dropdown "Team" nel modal Modifica persona
+function popolaSelectTeamPersona(selectId, currentTeamId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = `<option value="">— Nessun team —</option>` +
+    stato.team.slice().sort((a, b) => (a.ordine || 0) - (b.ordine || 0))
+      .map(tm => `<option value="${tm.id}" ${currentTeamId === tm.id ? 'selected' : ''}>${escapeHtml(tm.nome)}</option>`)
+      .join('');
 }
 
 // ===== GESTIONE PROGETTI JIRA =====
@@ -1460,6 +1536,7 @@ function avviaSyncFirestore() {
       stato.persone   = remoto.persone   || [];
       stato.task      = remoto.task      || [];
       stato.festivita = remoto.festivita || [];
+      stato.team      = remoto.team      || [];
       stato.metadata  = mainData.metadata || null;
 
       collassaTutteEpicheInizialmente();
@@ -1498,9 +1575,9 @@ function terminaSyncFirestore() {
     try { _unsubFirestore(); } catch {}
     _unsubFirestore = null;
   }
-  stato = { persone: [], task: [], festivita: [] };
+  stato = { persone: [], task: [], festivita: [], team: [] };
   try { localStorage.removeItem('gantt-app-stato'); } catch {}
-  _scrollatoAOggiIniziale = false; // al prossimo login, ri-fai lo scroll
+  _scrollatoAOggiIniziale = false;
   aggiornaViste();
   impostaSyncStato('loading');
 }
@@ -1626,11 +1703,22 @@ function migraStato(dati) {
   // Festività (può essere vuoto)
   if (!Array.isArray(dati.festivita)) dati.festivita = [];
 
-  // Ferie + costo orario per persona
+  // Ferie + costo orario + team per persona
   dati.persone = dati.persone.map(p => ({
     ...p,
     ferie: Array.isArray(p.ferie) ? p.ferie.slice() : [],
-    costoOrario: Number.isFinite(Number(p.costoOrario)) ? Number(p.costoOrario) : 0
+    costoOrario: Number.isFinite(Number(p.costoOrario)) ? Number(p.costoOrario) : 0,
+    teamId: p.teamId || null,
+    ordine: Number.isFinite(Number(p.ordine)) ? Number(p.ordine) : 0
+  }));
+
+  // Team (può essere vuoto)
+  if (!Array.isArray(dati.team)) dati.team = [];
+  dati.team = dati.team.map(t => ({
+    id: t.id,
+    nome: t.nome || '',
+    colore: t.colore || '#5e6ad2',
+    ordine: Number.isFinite(Number(t.ordine)) ? Number(t.ordine) : 0
   }));
 
   return dati;
@@ -2107,6 +2195,7 @@ function apriModaleModificaPersona(id) {
   document.getElementById('edit-persona-fte').value    = p.fte;
   document.getElementById('edit-persona-colore').value = p.colore;
   document.getElementById('edit-persona-costo').value  = Number(p.costoOrario) || 0;
+  popolaSelectTeamPersona('edit-persona-team', p.teamId);
   document.getElementById('modal-persona-overlay').classList.remove('hidden');
 }
 
@@ -2123,6 +2212,8 @@ function salvaModificaPersona(nome, ruolo, fte, colore, costoOrario) {
   p.fte = fte;
   p.colore = colore;
   p.costoOrario = Math.max(0, Number(costoOrario) || 0);
+  const teamSel = document.getElementById('edit-persona-team');
+  p.teamId = teamSel?.value || null;
   salvaStato();
   chiudiModaleModificaPersona();
   aggiornaViste();

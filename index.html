@@ -44,6 +44,7 @@
           <button type="button" class="kebab-item only-owner" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
           <button type="button" class="kebab-item only-owner" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
+          <button type="button" class="kebab-item only-owner" id="btn-gestisci-team">Gestisci team</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-accessi">Gestisci accessi (whitelist)</button>
           <div class="kebab-divider only-owner"></div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
@@ -519,9 +520,34 @@
             Colore
             <input type="color" id="edit-persona-colore">
           </label>
+          <label>
+            Team
+            <select id="edit-persona-team">
+              <option value="">— Nessun team —</option>
+            </select>
+          </label>
         </div>
         <button type="submit" class="btn btn-primary">Salva modifiche</button>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL GESTIONE TEAM =================== -->
+  <div id="modal-team-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Gestisci team</h3>
+        <button class="btn-close" id="btn-chiudi-modal-team" type="button">×</button>
+      </header>
+      <p class="hint">
+        I team raggruppano le persone nel Workload. Ogni persona può appartenere a un solo team.
+      </p>
+      <form id="form-team-add" class="form-inline" style="margin-bottom:0.6rem">
+        <input type="text" id="team-nome-nuovo" placeholder="Nome team" required>
+        <input type="color" id="team-colore-nuovo" value="#5e6ad2">
+        <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+      </form>
+      <ul id="lista-team" class="lista"></ul>
     </div>
   </div>
 
