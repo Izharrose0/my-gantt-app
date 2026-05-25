@@ -1393,24 +1393,30 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
     margin-bottom: 0.5rem !important;
   }
   body[data-printing="report"] .modal-header .btn-close { display: none !important; }
-  body[data-printing="report"] .report-tabella th {
+  /* ID #modal-report-overlay necessario per battere la regola blanket
+     #modal-report-overlay * { color: black } che ha specificita' 0,1,x */
+  body[data-printing="report"] #modal-report-overlay .report-tabella th {
     background: #1e293b !important;
     color: white !important;
     border: 1px solid #334155 !important;
     font-size: 0.75rem !important;
     padding: 0.4rem 0.5rem !important;
   }
-  body[data-printing="report"] .report-tabella td {
+  body[data-printing="report"] #modal-report-overlay .report-tabella td {
     border: 1px solid #cbd5e1 !important;
     font-size: 0.75rem !important;
     padding: 0.35rem 0.5rem !important;
+    background: white !important;
   }
-  body[data-printing="report"] .report-team-header td {
+  body[data-printing="report"] #modal-report-overlay .report-team-header td {
     background: #334155 !important;
     color: white !important;
     font-size: 0.85rem !important;
   }
-  body[data-printing="report"] .report-team-header td small {
+  body[data-printing="report"] #modal-report-overlay .report-team-header td * {
+    color: white !important;
+  }
+  body[data-printing="report"] #modal-report-overlay .report-team-header td small {
     color: #cbd5e1 !important;
   }
   body[data-printing="report"] .report-perc.over  { background: #fecaca !important; }
