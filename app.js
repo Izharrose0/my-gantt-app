@@ -1648,7 +1648,7 @@ function avviaSyncFirestore() {
         allTasks.push(...mainData.task);
       }
 
-      const fakeStato = { persone: mainData.persone, task: allTasks, festivita: mainData.festivita };
+      const fakeStato = { persone: mainData.persone, task: allTasks, festivita: mainData.festivita, team: mainData.team };
       const remoto = migraStato(fakeStato);
       stato.persone   = remoto.persone   || [];
       stato.task      = remoto.task      || [];
