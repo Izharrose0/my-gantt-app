@@ -215,12 +215,28 @@ function renderListaTeam() {
       <li class="acc-row">
         <div style="display:flex;align-items:center;gap:0.6rem">
           <span style="width:16px;height:16px;border-radius:3px;background:${escapeHtml(tm.colore)};flex-shrink:0"></span>
-          <strong>${escapeHtml(tm.nome)}</strong>
+          <strong class="team-nome-edit" data-team-id="${tm.id}" style="cursor:pointer" title="Click per rinominare">${escapeHtml(tm.nome)}</strong>
           <small style="color:var(--color-text-muted)">${n} persone</small>
         </div>
-        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-team="${tm.id}">Rimuovi</button>
+        <div style="display:flex;gap:0.3rem">
+          <button type="button" class="btn btn-edit btn-sm" data-rinomina-team="${tm.id}">Rinomina</button>
+          <button type="button" class="btn btn-danger btn-sm" data-rimuovi-team="${tm.id}">Rimuovi</button>
+        </div>
       </li>`;
   }).join('');
+  ul.querySelectorAll('[data-rinomina-team]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.rinominaTeam;
+      const tm = stato.team.find(t => t.id === id);
+      if (!tm) return;
+      const nuovoNome = prompt('Nuovo nome per il team:', tm.nome);
+      if (!nuovoNome || !nuovoNome.trim()) return;
+      tm.nome = nuovoNome.trim();
+      salvaStato();
+      renderListaTeam();
+      aggiornaViste();
+    });
+  });
   ul.querySelectorAll('[data-rimuovi-team]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.rimuoviTeam;
@@ -1824,6 +1840,10 @@ function eEpica(taskId) {
   return t?.tipo === 'epica';
 }
 
+function haFigli(taskId) {
+  return stato.task.some(t => t.parentId === taskId);
+}
+
 function eMilestone(taskId) {
   const t = stato.task.find(x => x.id === taskId);
   return t?.tipo === 'milestone';
@@ -1937,6 +1957,10 @@ function eFoglia(taskId) {
 // Restituisce un array flat ordinato { task, livello, isEpica, collassata }
 // dei task. Se rispettaCollasso=true, i discendenti delle epiche collassate
 // vengono saltati (usato dal Gantt).
+// Restituisce un array flat ordinato { task, livello, isEpica, isParent, collassata }.
+// isEpica = tipo 'epica' (da Jira o manuale). isParent = ha figli (anche Story con sub-task).
+// Il chevron di collapse appare su isParent (non solo isEpica), così le Story
+// con sub-task sono espandibili/collassabili come le epiche.
 function ordineGerarchicoTask(rispettaCollasso = false, ammessi = null) {
   const out = [];
   function walk(parentId, livello) {
@@ -1947,8 +1971,9 @@ function ordineGerarchicoTask(rispettaCollasso = false, ammessi = null) {
       .sort((a, b) => (Number(a.ordine) || 0) - (Number(b.ordine) || 0))
       .forEach(t => {
         const isEpica = eEpica(t.id);
-        const collassata = isEpica && epicheCollassate.has(t.id);
-        out.push({ task: t, livello, isEpica, collassata });
+        const isParent = isEpica || haFigli(t.id);
+        const collassata = isParent && epicheCollassate.has(t.id);
+        out.push({ task: t, livello, isEpica, isParent, collassata });
         if (rispettaCollasso && collassata) return;
         walk(t.id, livello + 1);
       });
@@ -2632,7 +2657,7 @@ function renderTaskHTML(tasks, livello = 0) {
          ${costoBadge}`;
     }
 
-    const chevron = isEpica
+    const chevron = isParent
       ? `<span class="task-tree-chevron task-chevron-toggle" data-toggle-task="${t.id}">${epicheCollassate.has(t.id) ? '▸' : '▾'}</span>`
       : (isMilestone
           ? '<span class="task-tree-chevron leaf"><span class="milestone-diamond"></span></span>'
@@ -3134,12 +3159,13 @@ function renderGantt() {
   const taskOrdinati = ordineGerarchicoTask(true, ammessi);
 
   // --- Righe task (sia colonna laterale che barre nella timeline) ---
-  const sideRows = taskOrdinati.map(({ task: t, livello, isEpica, collassata }, i) => {
+  const sideRows = taskOrdinati.map(({ task: t, livello, isEpica, isParent, collassata }, i) => {
     const statoVis = isEpica ? aggregaEpica(t).stato : t.stato;
     const infoStato = STATI_TASK[statoVis] || STATI_TASK.todo;
     const indent = livello * 14;
     const altCls = i % 2 === 1 ? ' row-alt' : '';
-    const chevron = isEpica
+    // Chevron per QUALSIASI nodo con figli (epiche + Story con sub-task)
+    const chevron = isParent
       ? `<span class="gantt-chevron" data-toggle="${t.id}">${collassata ? '▸' : '▾'}</span>`
       : '<span class="gantt-chevron leaf"></span>';
     return `
