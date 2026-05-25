@@ -1356,27 +1356,60 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
   body[data-printing="report"] .app-header,
   body[data-printing="report"] .tabs,
   body[data-printing="report"] main,
+  body[data-printing="report"] .bottom-bar,
+  body[data-printing="report"] .run-banner,
+  body[data-printing="report"] .access-banner,
   body[data-printing="report"] .modal-overlay:not(#modal-report-overlay) {
     display: none !important;
   }
   body[data-printing="report"] #modal-report-overlay {
-    position: static;
-    background: none;
-    padding: 0;
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
   }
   body[data-printing="report"] #modal-report-overlay .modal {
-    box-shadow: none;
-    border: none;
-    max-width: 100%;
-    max-height: none;
-    padding: 0;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
   }
-  body[data-printing="report"] .modal-header,
   body[data-printing="report"] .report-controls { display: none !important; }
+  body[data-printing="report"] .modal-header h3 {
+    color: black !important;
+    font-size: 1.2rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  body[data-printing="report"] .modal-header .btn-close { display: none !important; }
+  body[data-printing="report"] .report-tabella {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   body[data-printing="report"] .report-tabella th,
   body[data-printing="report"] .report-tabella td {
     border-color: #cbd5e1 !important;
+    color: black !important;
+    font-size: 0.8rem !important;
   }
+  body[data-printing="report"] .report-team-header td {
+    background: #f1f5f9 !important;
+    color: black !important;
+  }
+  body[data-printing="report"] .report-perc {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body[data-printing="report"] .report-proj-badge {
+    background: #e2e8f0 !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body[data-printing="report"] .hint { color: #64748b !important; }
 }
 
 /* ===================================================================== */
@@ -2864,6 +2897,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* =====================================================================
    ===== MATRICE DI EISENHOWER =========================================
    ===================================================================== */
+
+/* Report settimanale: header team + allocazione per progetto */
+.report-team-header td {
+  background: var(--color-surface-3) !important;
+  padding: 0.5rem 0.7rem !important;
+  border-bottom: 2px solid var(--color-border) !important;
+  font-size: 0.9rem;
+}
 
 /* Report settimanale: allocazione per progetto */
 .report-proj-cell { white-space: normal; }

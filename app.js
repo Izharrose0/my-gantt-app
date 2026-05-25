@@ -1042,13 +1042,91 @@ function renderReportSettimana() {
     body.innerHTML = '<p class="empty-state">Seleziona un intervallo di date valido.</p>';
     return;
   }
-  const allocazioni = calcolaAllocazioniPeriodo(da, a);
-  // Giorni lavorativi del range (per la capacità teorica)
+  const allocazioni = calcolaAllocazioniPeriodo(da, a)
+    // Escludi persone nascoste (modal "Gestisci visibilità persone")
+    .filter(({ persona }) => !persona.nascosta)
+    // Escludi persone senza allocazione nel periodo
+    .filter(({ totaleH }) => totaleH > 0);
+
   const ggLavRange = giorniLavorativi(da, a);
+
+  // Raggruppa per team (con sezione "Non assegnati" in fondo)
+  const teamOrd = new Map((stato.team || []).map(t => [t.id, t]));
+  const gruppi = new Map(); // teamId → [{persona, totaleH, items}]
+  allocazioni.forEach(a => {
+    const tid = a.persona.teamId || '__unassigned__';
+    if (!gruppi.has(tid)) gruppi.set(tid, []);
+    gruppi.get(tid).push(a);
+  });
+  const ordineGruppi = [...gruppi.keys()].sort((a, b) => {
+    if (a === '__unassigned__') return 1;
+    if (b === '__unassigned__') return -1;
+    const oa = teamOrd.get(a)?.ordine ?? 999;
+    const ob = teamOrd.get(b)?.ordine ?? 999;
+    return oa - ob;
+  });
+
+  // Funzione per rendere una riga persona
+  function rigaPersona({ persona: p, totaleH, items }) {
+    const ggLavPersona = giorniLavorativi(da, a, p.id);
+    const capacita = ggLavPersona * ORE_GIORNO_PIENE * p.fte;
+    const perc = capacita > 0 ? Math.round(totaleH / capacita * 100) : 0;
+    const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
+    const itemsConOre = items.filter(it => it.ore > 0);
+
+    const orPerProg = {};
+    itemsConOre.forEach(it => {
+      const task = stato.task.find(t => t.id === it.taskId);
+      const proj = task?.jiraProject || 'Manuale';
+      orPerProg[proj] = (orPerProg[proj] || 0) + it.ore;
+    });
+    const progettiAlloc = Object.entries(orPerProg)
+      .sort((a, b) => b[1] - a[1])
+      .map(([proj, ore]) => {
+        const pct = totaleH > 0 ? Math.round(ore / totaleH * 100) : 0;
+        return `<span class="report-proj-badge">${escapeHtml(proj)} ${pct}%</span>`;
+      }).join(' ');
+
+    const taskList = itemsConOre.map(it =>
+      `<div class="report-task-item">${escapeHtml(it.taskNome)} — <strong>${it.ore.toFixed(1)}h</strong> <small>(${it.giorni} gg)</small></div>`
+    ).join('');
+
+    return `
+      <tr>
+        <td>
+          <span class="badge-colore" style="background:${escapeHtml(p.colore)}"></span>
+          <strong>${escapeHtml(p.nome)}</strong><br>
+          <small style="color:#64748b">${escapeHtml(p.ruolo)} · FTE ${p.fte}</small>
+        </td>
+        <td><strong>${capacita.toFixed(0)}h</strong><br><small>${ggLavPersona} gg</small></td>
+        <td><strong>${totaleH.toFixed(1)}h</strong></td>
+        <td><span class="report-perc ${cls}">${perc}%</span></td>
+        <td class="report-proj-cell">${progettiAlloc || '—'}</td>
+        <td class="report-task-cell">${taskList}</td>
+      </tr>`;
+  }
+
+  // Genera le righe raggruppate per team
+  const righe = ordineGruppi.map(tid => {
+    const tm = teamOrd.get(tid);
+    const teamNome = tm ? tm.nome : 'Non assegnati';
+    const teamColore = tm ? tm.colore : '#64748b';
+    const membri = gruppi.get(tid);
+    const teamH = membri.reduce((s, a) => s + a.totaleH, 0);
+    return `
+      <tr class="report-team-header">
+        <td colspan="6">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${escapeHtml(teamColore)};vertical-align:middle;margin-right:6px"></span>
+          <strong>${escapeHtml(teamNome)}</strong>
+          <small style="color:#94a3b8;margin-left:8px">${membri.length} persone · ${teamH.toFixed(1)}h totali</small>
+        </td>
+      </tr>
+      ${membri.map(rigaPersona).join('')}`;
+  }).join('');
 
   body.innerHTML = `
     <p class="hint">Allocazioni dal <strong>${formatDataBreve(da)}</strong> al <strong>${formatDataBreve(a)}</strong>
-       (${ggLavRange} giorni lavorativi).</p>
+       (${ggLavRange} giorni lavorativi). Mostrando solo persone con allocazione &gt; 0.</p>
     <table class="report-tabella">
       <thead>
         <tr>
@@ -1060,49 +1138,7 @@ function renderReportSettimana() {
           <th>Task assegnati</th>
         </tr>
       </thead>
-      <tbody>
-        ${allocazioni.map(({ persona: p, totaleH, items }) => {
-          const ggLavPersona = giorniLavorativi(da, a, p.id);
-          const capacita = ggLavPersona * ORE_GIORNO_PIENE * p.fte;
-          const perc = capacita > 0 ? Math.round(totaleH / capacita * 100) : 0;
-          const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
-          // Nascondi task con 0h di allocazione (niente valore nel report)
-          const itemsConOre = items.filter(it => it.ore > 0);
-
-          // Allocazione % per progetto Jira
-          const orPerProg = {};
-          itemsConOre.forEach(it => {
-            const task = stato.task.find(t => t.id === it.taskId);
-            const proj = task?.jiraProject || 'Manuale';
-            orPerProg[proj] = (orPerProg[proj] || 0) + it.ore;
-          });
-          const progettiAlloc = Object.entries(orPerProg)
-            .sort((a, b) => b[1] - a[1])
-            .map(([proj, ore]) => {
-              const pct = totaleH > 0 ? Math.round(ore / totaleH * 100) : 0;
-              return `<span class="report-proj-badge">${escapeHtml(proj)} ${pct}%</span>`;
-            }).join(' ');
-
-          const taskList = itemsConOre.length
-            ? itemsConOre.map(it =>
-                `<div class="report-task-item">${escapeHtml(it.taskNome)} — <strong>${it.ore.toFixed(1)}h</strong> <small>(${it.giorni} gg)</small></div>`
-              ).join('')
-            : '<em style="color:#94a3b8">Nessun task con ore allocate</em>';
-          return `
-            <tr>
-              <td>
-                <span class="badge-colore" style="background:${escapeHtml(p.colore)}"></span>
-                <strong>${escapeHtml(p.nome)}</strong><br>
-                <small style="color:#64748b">${escapeHtml(p.ruolo)} · FTE ${p.fte}</small>
-              </td>
-              <td><strong>${capacita.toFixed(0)}h</strong><br><small>${ggLavPersona} gg</small></td>
-              <td><strong>${totaleH.toFixed(1)}h</strong></td>
-              <td><span class="report-perc ${cls}">${perc}%</span></td>
-              <td class="report-proj-cell">${progettiAlloc || '—'}</td>
-              <td class="report-task-cell">${taskList}</td>
-            </tr>`;
-        }).join('')}
-      </tbody>
+      <tbody>${righe}</tbody>
     </table>
   `;
 }
