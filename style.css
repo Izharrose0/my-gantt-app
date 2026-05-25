@@ -1363,6 +1363,7 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
     display: none !important;
   }
   body[data-printing="report"] #modal-report-overlay {
+    display: block !important;   /* CRITICO: la regola generica .modal-overlay setta display:none */
     position: static !important;
     background: none !important;
     padding: 0 !important;
