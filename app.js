@@ -1280,7 +1280,7 @@ function popolaFiltri() {
     // Team
     const selTeam = bar.querySelector('.filter-team');
     if (selTeam) {
-      selTeam.innerHTML = `<option value="">— Tutti —</option>` + stato.team
+      selTeam.innerHTML = `<option value="">— Tutti —</option>` + (stato.team || [])
         .slice().sort((a, b) => (a.ordine || 0) - (b.ordine || 0))
         .map(tm => `<option value="${tm.id}" ${f.team === tm.id ? 'selected' : ''}>${escapeHtml(tm.nome)}</option>`)
         .join('');
@@ -1500,7 +1500,7 @@ function caricaStato() {
   // SICUREZZA: lo stato parte vuoto e l'app e' visualmente bloccata fino a
   // quando l'auth non e' risolta come utente con permessi. Nessuna lettura
   // di localStorage o Firestore prima dell'autenticazione.
-  stato = { persone: [], task: [], festivita: [] };
+  stato = { persone: [], task: [], festivita: [], team: [] };
   document.body.setAttribute('data-locked', 'true');
   impostaSyncStato('loading');
 
@@ -1606,7 +1606,7 @@ function avviaSyncFirestore() {
     console.error('Firestore listen error:', err);
     impostaSyncStato('error');
     if (err?.code === 'permission-denied') {
-      stato = { persone: [], task: [], festivita: [] };
+      stato = { persone: [], task: [], festivita: [], team: [] };
       try { localStorage.removeItem('gantt-app-stato'); } catch {}
       aggiornaViste();
       mostraBannerAccesso();
@@ -2607,6 +2607,7 @@ function renderTaskHTML(tasks, livello = 0) {
     const isEpica = t.tipo === 'epica';
     const isMilestone = t.tipo === 'milestone';
     const figli = stato.task.filter(c => c.parentId === t.id);
+    const isParent = isEpica || figli.length > 0;
     const agg = isEpica ? aggregaEpica(t) : null;
     const statoVis = isEpica ? agg.stato : t.stato;
     const infoStato = STATI_TASK[statoVis] || STATI_TASK.todo;
