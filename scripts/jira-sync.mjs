@@ -525,10 +525,11 @@ async function main() {
     const conDue   = nonEpics.filter(it => it.fields?.duedate).length;
     console.log(`  Date: ${conStart}/${nonEpics.length} con Start, ${conDue}/${nonEpics.length} con Due`);
 
-    // Indice dei task ESISTENTI di QUESTO progetto (per merge per jiraKey)
+    // Indice dei task ESISTENTI per jiraKey (ALL projects, non solo questo).
+    // Serve a trovare task importati PRIMA della feature multi-progetto
+    // (con jiraProject null) e aggiornarli senza creare duplicati.
     const byJiraKey = new Map(
-      stato.task.filter(t => t.jiraKey && t.jiraProject === projectKey)
-        .map(t => [t.jiraKey, t])
+      stato.task.filter(t => t.jiraKey).map(t => [t.jiraKey, t])
     );
     const maxOrdine = stato.task.reduce((m, t) => Math.max(m, Number(t.ordine) || 0), 0);
     let nextOrdine = maxOrdine + 1;
@@ -563,9 +564,11 @@ async function main() {
       console.log(`  ⚠ ${orphans} issue con parent fuori dal progetto ${projectKey} (top-level)`);
     }
 
-    // Sostituisco i task di QUESTO progetto con quelli nuovi (manuali e
-    // altri-progetto restano intoccati). Tutto coerente con i jiraProject tag.
-    const altri = stato.task.filter(t => !t.jiraKey || t.jiraProject !== projectKey);
+    // Rimuovo i task il cui jiraKey e' nel nuovo set (indipendentemente
+    // dal loro vecchio jiraProject — potrebbe essere null sui vecchi import).
+    // Quelli manuali (senza jiraKey) e di ALTRI progetti restano intoccati.
+    const newKeys = new Set(jiraKeyToTask.keys());
+    const altri = stato.task.filter(t => !t.jiraKey || !newKeys.has(t.jiraKey));
     stato.task = [...altri, ...jiraKeyToTask.values()];
     console.log(`  ${projectKey}: ${creati} nuovi, ${aggiornati} aggiornati`);
     creatiTot += creati;
