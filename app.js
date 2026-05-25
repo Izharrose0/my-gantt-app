@@ -977,11 +977,13 @@ function renderReportSettimana() {
           const capacita = ggLavPersona * ORE_GIORNO_PIENE * p.fte;
           const perc = capacita > 0 ? Math.round(totaleH / capacita * 100) : 0;
           const cls = perc > 100 ? 'over' : perc >= 80 ? 'warn' : perc > 0 ? 'ok' : 'zero';
-          const taskList = items.length
-            ? items.map(it =>
+          // Nascondi task con 0h di allocazione (niente valore nel report)
+          const itemsConOre = items.filter(it => it.ore > 0);
+          const taskList = itemsConOre.length
+            ? itemsConOre.map(it =>
                 `<div class="report-task-item">${escapeHtml(it.taskNome)} — <strong>${it.ore.toFixed(1)}h</strong> <small>(${it.giorni} gg)</small></div>`
               ).join('')
-            : '<em style="color:#94a3b8">Nessun task</em>';
+            : '<em style="color:#94a3b8">Nessun task con ore allocate</em>';
           return `
             <tr>
               <td>
@@ -3799,14 +3801,45 @@ function renderWorkload() {
   const HEAT_H = 24; // px heat strip
   const ROW_PAD = 6;
 
-  // ---- Righe persona (filtrate) ----
+  // ---- Righe persona (filtrate, raggruppate per team) ----
   const sideRowsArr = [];
   const bodyRowsArr = [];
-  const personeMostrate = filtri.workload.persone.length
+  let personeMostrate = filtri.workload.persone.length
     ? stato.persone.filter(p => filtri.workload.persone.includes(p.id))
-    : stato.persone;
+    : stato.persone.slice();
+
+  // Ordina per: team.ordine → persona.ordine → nome. Non assegnati (teamId null) in fondo.
+  const teamOrdMap = new Map(stato.team.map(t => [t.id, t.ordine || 0]));
+  personeMostrate.sort((a, b) => {
+    const ta = a.teamId ? (teamOrdMap.get(a.teamId) ?? 999) : 9999;
+    const tb = b.teamId ? (teamOrdMap.get(b.teamId) ?? 999) : 9999;
+    if (ta !== tb) return ta - tb;
+    if ((a.ordine || 0) !== (b.ordine || 0)) return (a.ordine || 0) - (b.ordine || 0);
+    return (a.nome || '').localeCompare(b.nome || '');
+  });
+
+  // Inserisco header di team tra le righe (tracked per sapere quando il team cambia)
+  let lastTeamId = '__none__';
 
   personeMostrate.forEach(p => {
+    // Header team: inserisco quando il team cambia
+    const curTeamId = p.teamId || '__unassigned__';
+    if (curTeamId !== lastTeamId && stato.team.length > 0) {
+      lastTeamId = curTeamId;
+      const tm = stato.team.find(t => t.id === curTeamId);
+      const teamLabel = tm ? tm.nome : 'Non assegnati';
+      const teamColor = tm ? tm.colore : '#64748b';
+      const membriCount = personeMostrate.filter(x => (x.teamId || '__unassigned__') === curTeamId).length;
+      sideRowsArr.push(`
+        <div class="wl-side-row wl-team-header" style="border-left:4px solid ${escapeHtml(teamColor)};height:28px">
+          <strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.5px;color:${escapeHtml(teamColor)}">${escapeHtml(teamLabel)}</strong>
+          <small>${membriCount} persone</small>
+        </div>`);
+      bodyRowsArr.push(`
+        <div class="wl-body-row wl-team-header-body" style="height:28px">
+          <div class="wl-timeline" style="width:${totaleW}px;position:relative;height:28px"></div>
+        </div>`);
+    }
     const capacitaG = p.fte * ORE_GIORNO_PIENE;
 
     // Task assegnati a questa persona (solo foglie, escluse milestone), filtrati

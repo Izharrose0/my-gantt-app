@@ -2865,6 +2865,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
    ===== MATRICE DI EISENHOWER =========================================
    ===================================================================== */
 
+/* Workload: header team */
+.wl-team-header {
+  background: var(--color-surface-3) !important;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem !important;
+}
+.wl-team-header-body {
+  background: var(--color-surface-3);
+}
+
 /* Toolbar Eisenhower: select progetto */
 .eisen-progetto-label {
   display: inline-flex;
