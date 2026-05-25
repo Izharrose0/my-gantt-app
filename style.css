@@ -2882,13 +2882,30 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* Workload: header team */
 .wl-team-header {
   background: var(--color-surface-3) !important;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.75rem !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem !important;
+  min-height: 36px !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+.wl-team-label {
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+.wl-team-header small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted) !important;
+  white-space: nowrap;
 }
 .wl-team-header-body {
   background: var(--color-surface-3);
+  min-height: 36px;
 }
 
 /* Toolbar Eisenhower: select progetto */

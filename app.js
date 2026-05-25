@@ -3964,13 +3964,13 @@ function renderWorkload() {
       const teamColor = tm ? tm.colore : '#64748b';
       const membriCount = personeMostrate.filter(x => (x.teamId || '__unassigned__') === curTeamId).length;
       sideRowsArr.push(`
-        <div class="wl-side-row wl-team-header" style="border-left:4px solid ${escapeHtml(teamColor)};height:28px">
-          <strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.5px;color:${escapeHtml(teamColor)}">${escapeHtml(teamLabel)}</strong>
+        <div class="wl-side-row wl-team-header" style="border-left:4px solid ${escapeHtml(teamColor)}">
+          <strong class="wl-team-label" style="color:${escapeHtml(teamColor)}">${escapeHtml(teamLabel)}</strong>
           <small>${membriCount} persone</small>
         </div>`);
       bodyRowsArr.push(`
-        <div class="wl-body-row wl-team-header-body" style="height:28px">
-          <div class="wl-timeline" style="width:${totaleW}px;position:relative;height:28px"></div>
+        <div class="wl-body-row wl-team-header-body">
+          <div class="wl-timeline" style="width:${totaleW}px;position:relative;height:36px"></div>
         </div>`);
     }
     const capacitaG = p.fte * ORE_GIORNO_PIENE;
