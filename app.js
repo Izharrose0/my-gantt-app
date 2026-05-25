@@ -3427,6 +3427,30 @@ function renderGantt() {
 
   // Disegna frecce dipendenze
   disegnaFrecceDipendenze(dayW, minDate);
+
+  // Dopo il render: assicura che lo scroll orizzontale non vada oltre
+  // la fine della timeline (succede quando i filtri riducono il range).
+  // Se la linea "oggi" non è visibile nel viewport, ri-scrolla a oggi.
+  const cont = document.getElementById('gantt-container');
+  if (cont) {
+    const timeline = cont.querySelector('.gantt-timeline');
+    if (timeline) {
+      const maxScroll = timeline.scrollWidth - cont.clientWidth;
+      if (cont.scrollLeft > maxScroll) cont.scrollLeft = Math.max(0, maxScroll);
+    }
+    const line = cont.querySelector('.gantt-today-line');
+    if (line) {
+      const lineLeft = parseFloat(line.style.left) || 0;
+      const sideW = cont.querySelector('.gantt-side')?.offsetWidth || 0;
+      const viewStart = cont.scrollLeft;
+      const viewEnd = viewStart + cont.clientWidth - sideW;
+      // Se oggi è fuori dalla viewport, ri-centra a 1/3
+      if (lineLeft < viewStart || lineLeft > viewEnd) {
+        const visibile = cont.clientWidth - sideW;
+        cont.scrollLeft = Math.max(0, lineLeft - visibile / 3);
+      }
+    }
+  }
 }
 
 // ---- Drag delle barre del Gantt ----
