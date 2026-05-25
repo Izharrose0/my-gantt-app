@@ -1191,14 +1191,20 @@ function esportaReportCSV() {
 }
 
 function stampaReport() {
+  const da = document.getElementById('report-data-da').value;
+  const a  = document.getElementById('report-data-a').value;
+  // Cambia il titolo della pagina per il nome del PDF
+  const titoloOriginale = document.title;
+  document.title = `MY-GANTT_Report_${da}_${a}`;
   document.body.setAttribute('data-printing', 'report');
-  document.body.setAttribute('data-printing-titolo', `Report — ${document.getElementById('report-data-da').value} → ${document.getElementById('report-data-a').value}`);
+  document.body.setAttribute('data-printing-titolo', `Report — ${da} → ${a}`);
   setTimeout(() => {
     window.print();
     setTimeout(() => {
       document.body.removeAttribute('data-printing');
       document.body.removeAttribute('data-printing-titolo');
-    }, 100);
+      document.title = titoloOriginale;
+    }, 200);
   }, 100);
 }
 

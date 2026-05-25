@@ -1374,42 +1374,50 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
     max-width: 100% !important;
     max-height: none !important;
     overflow: visible !important;
-    padding: 0 !important;
+    padding: 0.5rem !important;
     background: white !important;
     color: black !important;
   }
+  /* FONDAMENTALE: forza colore nero su TUTTO il contenuto del modal,
+     altrimenti il dark theme manda testo bianco su sfondo bianco */
+  body[data-printing="report"] #modal-report-overlay,
+  body[data-printing="report"] #modal-report-overlay * {
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   body[data-printing="report"] .report-controls { display: none !important; }
   body[data-printing="report"] .modal-header h3 {
-    color: black !important;
     font-size: 1.2rem !important;
     margin-bottom: 0.5rem !important;
   }
   body[data-printing="report"] .modal-header .btn-close { display: none !important; }
-  body[data-printing="report"] .report-tabella {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
   body[data-printing="report"] .report-tabella th,
   body[data-printing="report"] .report-tabella td {
-    border-color: #cbd5e1 !important;
-    color: black !important;
-    font-size: 0.8rem !important;
+    border: 1px solid #cbd5e1 !important;
+    font-size: 0.75rem !important;
+    padding: 0.35rem 0.5rem !important;
   }
   body[data-printing="report"] .report-team-header td {
     background: #f1f5f9 !important;
-    color: black !important;
+    font-size: 0.85rem !important;
   }
-  body[data-printing="report"] .report-perc {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+  body[data-printing="report"] .report-perc.over  { background: #fecaca !important; }
+  body[data-printing="report"] .report-perc.warn  { background: #fef3c7 !important; }
+  body[data-printing="report"] .report-perc.ok    { background: #d1fae5 !important; }
   body[data-printing="report"] .report-proj-badge {
     background: #e2e8f0 !important;
-    color: black !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+  }
+  body[data-printing="report"] .hint { color: #64748b !important; }
+  body[data-printing="report"] .badge-colore {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  body[data-printing="report"] .hint { color: #64748b !important; }
+  body[data-printing="report"] #report-body {
+    background: white !important;
+  }
 }
 
 /* ===================================================================== */
