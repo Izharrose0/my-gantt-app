@@ -1397,27 +1397,33 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
      #modal-report-overlay * { color: black } che ha specificita' 0,1,x */
   body[data-printing="report"] #modal-report-overlay .report-tabella th {
     background: #1e293b !important;
-    color: white !important;
-    border: 1px solid #334155 !important;
-    font-size: 0.75rem !important;
-    padding: 0.4rem 0.5rem !important;
+    color: #ffffff !important;
+    border: 1px solid #1e293b !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    padding: 0.5rem 0.6rem !important;
+    letter-spacing: 0.3px !important;
   }
   body[data-printing="report"] #modal-report-overlay .report-tabella td {
-    border: 1px solid #cbd5e1 !important;
-    font-size: 0.75rem !important;
-    padding: 0.35rem 0.5rem !important;
-    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    font-size: 0.78rem !important;
+    padding: 0.4rem 0.5rem !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
   }
   body[data-printing="report"] #modal-report-overlay .report-team-header td {
-    background: #334155 !important;
-    color: white !important;
+    background: #e2e8f0 !important;
+    color: #1e293b !important;
     font-size: 0.85rem !important;
+    font-weight: 700 !important;
+    border-top: 2px solid #94a3b8 !important;
   }
   body[data-printing="report"] #modal-report-overlay .report-team-header td * {
-    color: white !important;
+    color: #1e293b !important;
   }
   body[data-printing="report"] #modal-report-overlay .report-team-header td small {
-    color: #cbd5e1 !important;
+    color: #64748b !important;
+    font-weight: 400 !important;
   }
   body[data-printing="report"] .report-perc.over  { background: #fecaca !important; }
   body[data-printing="report"] .report-perc.warn  { background: #fef3c7 !important; }
