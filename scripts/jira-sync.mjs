@@ -85,25 +85,28 @@ async function caricaStatoFirestore() {
   return { ...mainData, task: allTasks };
 }
 
-// Salva stato in chunks (main senza task + task in docs separati)
+// Salva stato in chunks (main senza task + task in docs separati).
+// ORDINE CRITICO: scrivo i chunk PRIMA del main, perche' il frontend
+// ha un listener su main che scatta immediatamente e legge i chunk.
+// Se main arriva prima dei chunk → il frontend vede 0 task (race condition).
 async function salvaStatoFirestore(stato) {
   const { task, ...mainData } = stato;
   const tasks = task || [];
   const numChunks = Math.max(1, Math.ceil(tasks.length / TASK_CHUNK_SIZE));
   mainData.taskChunkCount = numChunks;
-
-  // Rimuovi il campo task dal main (ora in chunks separati)
   delete mainData.task;
-  await docRef.set(mainData);
 
+  // 1. Scrivi i chunk (prima del main!)
   for (let i = 0; i < numChunks; i++) {
     const slice = tasks.slice(i * TASK_CHUNK_SIZE, (i + 1) * TASK_CHUNK_SIZE);
     await db.collection('workspaces').doc(`tasks_${i}`).set({ items: slice });
   }
-  // Pulizia vecchi chunk in eccesso
+  // 2. Pulizia vecchi chunk in eccesso
   for (let i = numChunks; i < numChunks + 10; i++) {
     try { await db.collection('workspaces').doc(`tasks_${i}`).delete(); } catch {}
   }
+  // 3. Scrivi il main PER ULTIMO (il listener frontend parte qui)
+  await docRef.set(mainData);
 }
 
 // ===== Fetch da Jira con paginazione =====

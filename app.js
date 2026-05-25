@@ -1338,18 +1338,20 @@ function salvaStato() {
       const numChunks = Math.max(1, Math.ceil(tasks.length / TASK_CHUNK_SIZE));
       mainData.taskChunkCount = numChunks;
 
-      // Scrivo il doc main (senza task)
-      await fb.setDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, FIRESTORE_DOC), mainData);
+      // ORDINE CRITICO: chunks PRIMA, main DOPO (il listener su main
+      // scatta e legge i chunk — devono essere già aggiornati)
 
-      // Scrivo i chunk di task
+      // 1. Scrivo i chunk di task
       for (let i = 0; i < numChunks; i++) {
         const slice = tasks.slice(i * TASK_CHUNK_SIZE, (i + 1) * TASK_CHUNK_SIZE);
         await fb.setDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, `tasks_${i}`), { items: slice });
       }
-      // Rimuovo chunk vecchi in eccesso (es. se prima c'erano 4 chunk e ora 3)
-      for (let i = numChunks; i < (mainData.taskChunkCount || 0) + 5; i++) {
+      // 2. Rimuovo chunk vecchi in eccesso
+      for (let i = numChunks; i < numChunks + 5; i++) {
         try { await fb.deleteDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, `tasks_${i}`)); } catch {}
       }
+      // 3. Scrivo il doc main PER ULTIMO (trigger del listener)
+      await fb.setDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, FIRESTORE_DOC), mainData);
 
       impostaSyncStato('connected');
       aggiornaTooltipUltimaModifica();
