@@ -43,6 +43,7 @@
           <button type="button" class="kebab-item only-owner" id="btn-pull-jira">Pull da Jira → MY-GANTT</button>
           <button type="button" class="kebab-item only-owner" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
+          <button type="button" class="kebab-item only-owner" id="btn-gestisci-vis-persone">Gestisci visibilità persone</button>
           <button type="button" class="kebab-item only-owner" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-team">Gestisci team</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-accessi">Gestisci accessi (whitelist)</button>
@@ -532,6 +533,26 @@
         </div>
         <button type="submit" class="btn btn-primary">Salva modifiche</button>
       </form>
+    </div>
+  </div>
+
+  <!-- =================== MODAL VISIBILITÀ PERSONE =================== -->
+  <div id="modal-vis-persone-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Gestisci visibilità persone</h3>
+        <button class="btn-close" id="btn-chiudi-modal-vis-persone" type="button">×</button>
+      </header>
+      <p class="hint">
+        Spunta le persone che vuoi <strong>mostrare</strong> in Workload, Gantt e Report.
+        Le persone deselezionate restano nei dati ma non vengono visualizzate.
+      </p>
+      <div class="form-inline" style="margin-bottom:0.5rem">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-persone-tutti">Seleziona tutte</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-persone-nessuno">Deseleziona tutte</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-vis-persone-solo-assegnate">Solo con task</button>
+      </div>
+      <div id="lista-vis-persone" class="lista"></div>
     </div>
   </div>
 

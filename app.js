@@ -125,6 +125,22 @@ function inizializzaAuth() {
     try { await fb.signOut(fb.auth); } catch (e) {}
   });
 
+  // Click "Gestisci visibilità persone"
+  document.getElementById('btn-gestisci-vis-persone')?.addEventListener('click', apriModaleVisPersone);
+  document.getElementById('btn-chiudi-modal-vis-persone')?.addEventListener('click', () =>
+    document.getElementById('modal-vis-persone-overlay').classList.add('hidden'));
+  document.getElementById('btn-vis-persone-tutti')?.addEventListener('click', () => setVisibilitaPersoneTutte(false));
+  document.getElementById('btn-vis-persone-nessuno')?.addEventListener('click', () => setVisibilitaPersoneTutte(true));
+  document.getElementById('btn-vis-persone-solo-assegnate')?.addEventListener('click', () => {
+    stato.persone.forEach(p => {
+      const hasTask = stato.task.some(t => (t.assegnazioni || []).some(a => a.personaId === p.id));
+      p.nascosta = !hasTask;
+    });
+    salvaStato();
+    renderListaVisPersone();
+    aggiornaViste();
+  });
+
   // Click "Gestisci team" → modal
   document.getElementById('btn-gestisci-team')?.addEventListener('click', apriModaleTeam);
   document.getElementById('btn-chiudi-modal-team')?.addEventListener('click', () =>
@@ -193,6 +209,62 @@ function inizializzaAuth() {
     renderListaVisibilita();
     aggiornaViste();
   });
+}
+
+// ===== GESTIONE VISIBILITÀ PERSONE =====
+
+function apriModaleVisPersone() {
+  renderListaVisPersone();
+  document.getElementById('modal-vis-persone-overlay').classList.remove('hidden');
+}
+
+function renderListaVisPersone() {
+  const cont = document.getElementById('lista-vis-persone');
+  if (!cont) return;
+  const persone = stato.persone.slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  if (!persone.length) {
+    cont.innerHTML = '<li class="empty-state">Nessuna persona.</li>';
+    return;
+  }
+  cont.innerHTML = persone.map(p => {
+    const visibile = !p.nascosta;
+    const taskCount = stato.task.filter(t =>
+      (t.assegnazioni || []).some(a => a.personaId === p.id)).length;
+    const tm = (stato.team || []).find(t => t.id === p.teamId);
+    const teamBadge = tm ? `<span class="label-fte">${escapeHtml(tm.nome)}</span>` : '';
+    const jiraBadge = p.jiraAccountId
+      ? '<span class="label-fte epica-badge">Jira</span>'
+      : '';
+    return `
+      <li class="vis-row${visibile ? '' : ' vis-hidden'}">
+        <label class="vis-toggle">
+          <input type="checkbox" data-vis-persona="${p.id}" ${visibile ? 'checked' : ''}>
+          ${avatar(p, 'sm')}
+          <span class="vis-name">${escapeHtml(p.nome)}</span>
+          ${teamBadge}
+          ${jiraBadge}
+          <span class="label-fte">${taskCount} task</span>
+        </label>
+      </li>`;
+  }).join('');
+
+  cont.querySelectorAll('input[data-vis-persona]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const p = stato.persone.find(x => x.id === cb.dataset.visPersona);
+      if (!p) return;
+      p.nascosta = !cb.checked;
+      cb.closest('.vis-row')?.classList.toggle('vis-hidden', !cb.checked);
+      salvaStato();
+      aggiornaViste();
+    });
+  });
+}
+
+function setVisibilitaPersoneTutte(nascosta) {
+  stato.persone.forEach(p => { p.nascosta = nascosta; });
+  salvaStato();
+  renderListaVisPersone();
+  aggiornaViste();
 }
 
 // ===== GESTIONE TEAM =====
@@ -1754,7 +1826,8 @@ function migraStato(dati) {
     ferie: Array.isArray(p.ferie) ? p.ferie.slice() : [],
     costoOrario: Number.isFinite(Number(p.costoOrario)) ? Number(p.costoOrario) : 0,
     teamId: p.teamId || null,
-    ordine: Number.isFinite(Number(p.ordine)) ? Number(p.ordine) : 0
+    ordine: Number.isFinite(Number(p.ordine)) ? Number(p.ordine) : 0,
+    nascosta: p.nascosta === true
   }));
 
   // Team (può essere vuoto)
@@ -3861,6 +3934,8 @@ function renderWorkload() {
   let personeMostrate = filtri.workload.persone.length
     ? stato.persone.filter(p => filtri.workload.persone.includes(p.id))
     : stato.persone.slice();
+  // Nascondi persone con flag nascosta (modal "Gestisci visibilità persone")
+  personeMostrate = personeMostrate.filter(p => !p.nascosta);
   // Filtro team: se attivo, mostra solo le persone di quel team
   if (filtri.workload.team) {
     personeMostrate = personeMostrate.filter(p => p.teamId === filtri.workload.team);
