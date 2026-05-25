@@ -65,6 +65,46 @@ try {
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 const docRef = db.collection('workspaces').doc('main');
+const TASK_CHUNK_SIZE = 400;
+
+// Carica stato completo (main + task chunks)
+async function caricaStatoFirestore() {
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
+  const mainData = snap.data();
+  const chunkCount = Number(mainData.taskChunkCount) || 0;
+  let allTasks = [];
+  if (chunkCount > 0) {
+    for (let i = 0; i < chunkCount; i++) {
+      const cs = await db.collection('workspaces').doc(`tasks_${i}`).get();
+      if (cs.exists) allTasks.push(...(cs.data()?.items || []));
+    }
+  } else if (Array.isArray(mainData.task)) {
+    allTasks = mainData.task;
+  }
+  return { ...mainData, task: allTasks };
+}
+
+// Salva stato in chunks (main senza task + task in docs separati)
+async function salvaStatoFirestore(stato) {
+  const { task, ...mainData } = stato;
+  const tasks = task || [];
+  const numChunks = Math.max(1, Math.ceil(tasks.length / TASK_CHUNK_SIZE));
+  mainData.taskChunkCount = numChunks;
+
+  // Rimuovi il campo task dal main (ora in chunks separati)
+  delete mainData.task;
+  await docRef.set(mainData);
+
+  for (let i = 0; i < numChunks; i++) {
+    const slice = tasks.slice(i * TASK_CHUNK_SIZE, (i + 1) * TASK_CHUNK_SIZE);
+    await db.collection('workspaces').doc(`tasks_${i}`).set({ items: slice });
+  }
+  // Pulizia vecchi chunk in eccesso
+  for (let i = numChunks; i < numChunks + 10; i++) {
+    try { await db.collection('workspaces').doc(`tasks_${i}`).delete(); } catch {}
+  }
+}
 
 // ===== Fetch da Jira con paginazione =====
 
@@ -463,9 +503,8 @@ async function main() {
   console.log('▶ Rilevo campo Start date...');
   await autoDetectStartDateField();
 
-  console.log('▶ Lettura stato Firestore...');
-  const snapPre = await docRef.get();
-  const statoPre = snapPre.exists ? snapPre.data() : null;
+  console.log('▶ Lettura stato Firestore (main + task chunks)...');
+  const statoPre = await caricaStatoFirestore();
 
   // ===== MODALITÀ PUSH =====
   // Solo invio le modifiche locali di start/end a Jira. Riallinea anche
@@ -485,7 +524,7 @@ async function main() {
         if (t.fine   && t.fine   !== t.jiraSyncedFine)   t.jiraSyncedFine   = t.fine;
       });
       console.log('▶ Aggiorno snapshot jiraSyncedX su Firestore...');
-      await docRef.set(statoPre);
+      await salvaStatoFirestore(statoPre);
     }
     return; // niente fetch, niente merge
   }
@@ -577,8 +616,8 @@ async function main() {
 
   stato.persone = [...stato.persone, ...personeNuove];
 
-  console.log(`\n▶ Scrittura su Firestore: ${stato.task.length} task totali`);
-  await docRef.set(stato);
+  console.log(`\n▶ Scrittura su Firestore: ${stato.task.length} task totali (chunked in docs da ${TASK_CHUNK_SIZE})`);
+  await salvaStatoFirestore(stato);
 
   console.log('');
   console.log(`✅ Sync completato`);

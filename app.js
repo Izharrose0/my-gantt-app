@@ -1284,6 +1284,7 @@ const STATI_TASK = {
 
 const FIRESTORE_COLLECTION = 'workspaces';
 const FIRESTORE_DOC = 'main'; // workspace condiviso, multi-utente
+const TASK_CHUNK_SIZE = 400;  // max task per documento chunk (per stare sotto 1 MB Firestore)
 let _saveTimer = null;
 let _isApplyingRemote = false;
 
@@ -1329,10 +1330,27 @@ function salvaStato() {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
-      const { db, doc, setDoc } = window.__firebase;
-      // JSON serializzabile: rimuovo undefined ecc.
-      const payload = JSON.parse(JSON.stringify(stato));
-      await setDoc(doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC), payload);
+      const fb = window.__firebase;
+      // Separo task dal resto (persone, festivita, metadata) per chunking.
+      // Il doc main contiene tutto tranne i task; i task vanno in docs separati.
+      const { task, ...mainData } = JSON.parse(JSON.stringify(stato));
+      const tasks = task || [];
+      const numChunks = Math.max(1, Math.ceil(tasks.length / TASK_CHUNK_SIZE));
+      mainData.taskChunkCount = numChunks;
+
+      // Scrivo il doc main (senza task)
+      await fb.setDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, FIRESTORE_DOC), mainData);
+
+      // Scrivo i chunk di task
+      for (let i = 0; i < numChunks; i++) {
+        const slice = tasks.slice(i * TASK_CHUNK_SIZE, (i + 1) * TASK_CHUNK_SIZE);
+        await fb.setDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, `tasks_${i}`), { items: slice });
+      }
+      // Rimuovo chunk vecchi in eccesso (es. se prima c'erano 4 chunk e ora 3)
+      for (let i = numChunks; i < (mainData.taskChunkCount || 0) + 5; i++) {
+        try { await fb.deleteDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, `tasks_${i}`)); } catch {}
+      }
+
       impostaSyncStato('connected');
       aggiornaTooltipUltimaModifica();
     } catch (e) {
@@ -1399,36 +1417,55 @@ function avviaSyncFirestore() {
   const { db, doc, onSnapshot } = window.__firebase;
   const ref = doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC);
 
-  _unsubFirestore = onSnapshot(ref, snap => {
-    // I write locali pendenti producono uno snapshot subito: lo ignoriamo
+  // Listener sul doc main (persone, festivita, metadata, taskChunkCount).
+  // Quando il main cambia, ri-leggiamo anche i chunk dei task.
+  _unsubFirestore = onSnapshot(ref, async snap => {
     if (snap.metadata.hasPendingWrites) return;
 
     if (!snap.exists()) {
-      // Doc nuovo: pushiamo lo stato locale corrente (o vuoto)
       salvaStato();
       impostaSyncStato('connected');
       return;
     }
 
-    // Applica i dati remoti senza ri-scattare un save
     _isApplyingRemote = true;
     try {
-      const remoto = migraStato(snap.data());
-      // Mantieni il riferimento dell'oggetto se possibile
+      const mainData = snap.data() || {};
+      const chunkCount = Number(mainData.taskChunkCount) || 0;
+
+      // Leggi i chunk di task in parallelo
+      const allTasks = [];
+      if (chunkCount > 0) {
+        const fb = window.__firebase;
+        const promises = [];
+        for (let i = 0; i < chunkCount; i++) {
+          promises.push(fb.getDoc(fb.doc(fb.db, FIRESTORE_COLLECTION, `tasks_${i}`)));
+        }
+        const chunkSnaps = await Promise.all(promises);
+        chunkSnaps.forEach(cs => {
+          if (cs.exists()) {
+            const items = cs.data()?.items;
+            if (Array.isArray(items)) allTasks.push(...items);
+          }
+        });
+      } else if (Array.isArray(mainData.task)) {
+        // Backward-compat: vecchio formato con task nel main doc
+        allTasks.push(...mainData.task);
+      }
+
+      const fakeStato = { persone: mainData.persone, task: allTasks, festivita: mainData.festivita };
+      const remoto = migraStato(fakeStato);
       stato.persone   = remoto.persone   || [];
       stato.task      = remoto.task      || [];
       stato.festivita = remoto.festivita || [];
-      stato.metadata  = remoto.metadata  || null;
-      // Alla prima snapshot collassa tutte le epiche (anche se sono arrivate da remoto)
+      stato.metadata  = mainData.metadata || null;
+
       collassaTutteEpicheInizialmente();
-      // Cache locale aggiornata
       try { localStorage.setItem('gantt-app-stato', JSON.stringify(stato)); } catch {}
       aggiornaTooltipUltimaModifica();
       aggiornaViste();
       impostaSyncStato('connected');
-      // Scroll iniziale: solo la prima volta che ricevo dati, e solo se
-      // l'utente e' su Gantt o Workload (la chiamata in inizializza() era
-      // troppo presto, prima dell'arrivo dei dati Firestore)
+
       if (!_scrollatoAOggiIniziale) {
         const tabAttiva = document.querySelector('.tab.active')?.dataset.tab;
         if (tabAttiva === 'gantt')         setTimeout(scrollAOggi, 100);
@@ -1445,8 +1482,6 @@ function avviaSyncFirestore() {
     console.error('Firestore listen error:', err);
     impostaSyncStato('error');
     if (err?.code === 'permission-denied') {
-      // Clear di tutto cio' che potrebbe essere stato gia' renderizzato
-      // dalla cache IndexedDB prima che il server respingesse la lettura
       stato = { persone: [], task: [], festivita: [] };
       try { localStorage.removeItem('gantt-app-stato'); } catch {}
       aggiornaViste();

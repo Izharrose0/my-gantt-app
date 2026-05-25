@@ -640,7 +640,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
     import {
-      getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence
+      getFirestore, doc, onSnapshot, setDoc, getDoc, deleteDoc,
+      enableIndexedDbPersistence
     } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
     import {
       getAuth,
@@ -695,7 +696,7 @@
 
     // Esposto a app.js (non-module) tramite window
     window.__firebase = {
-      db, doc, onSnapshot, setDoc,
+      db, doc, onSnapshot, setDoc, getDoc, deleteDoc,
       auth,
       sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
       signOut, onAuthStateChanged
