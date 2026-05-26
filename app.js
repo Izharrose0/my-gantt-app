@@ -1929,27 +1929,41 @@ function oreGiornaliereAssegnazione(t, assegnazione) {
   return orePersona / ggLav;
 }
 
+// Se un sotto-task ha 0h e TUTTI i fratelli hanno 0h, eredita una quota
+// dal parent: parent.stimaOre / (1 + N fratelli). Il parent conta come
+// "1 unità" accanto ai sotto-task.
+function oreEreditateDalParent(t) {
+  if (!t.parentId) return 0;
+  const parent = stato.task.find(p => p.id === t.parentId);
+  if (!parent) return 0;
+  const parentOre = Number(parent.stimaOre) || 0;
+  if (!parentOre) return 0;
+  const siblings = stato.task.filter(s => s.parentId === parent.id);
+  if (!siblings.every(s => (Number(s.stimaOre) || 0) === 0)) return 0;
+  return parentOre / (1 + siblings.length);
+}
+
 // Ore totali effettive di un task: max tra le proprie e la somma dei figli.
-// "Comanda il numero più grande": se i figli sommano più del parent, il parent
-// si adatta; se il parent ha più ore dei figli, il residuo è per il parent.
+// Per le foglie a 0h con fratelli tutti a 0h: eredita dal parent.
 function stimaOreEffettiva(t) {
   const proprie = Number(t.stimaOre) || 0;
   const figli = stato.task.filter(f => f.parentId === t.id);
-  if (!figli.length) return proprie;
+  if (!figli.length) return proprie > 0 ? proprie : oreEreditateDalParent(t);
   const sommaFigli = figli.reduce((s, f) => s + stimaOreEffettiva(f), 0);
   return Math.max(proprie, sommaFigli);
 }
 
-// Ore residue per il task stesso (dopo aver "tolto" le ore dei sotto-task).
-// Queste sono le ore che gli assignee del parent effettivamente lavorano.
-// Es: parent 40h → sub-task 24h → parent residuo = 16h.
-// Es: parent 40h → sub-task 40h + 40h → parent residuo = 0h (figli comandano).
+// Ore residue per il task: le ore che gli assignee del parent lavorano.
+// Caso 1: figli con ore proprie → residuo = proprie - somma figli (min 0)
+// Caso 2: figli TUTTI a 0h → dividi equamente: parent prende 1/(1+N)
+// Caso 3: foglia a 0h → eredita quota dal parent
 function oreResidueTask(t) {
   const proprie = Number(t.stimaOre) || 0;
   const figli = stato.task.filter(f => f.parentId === t.id);
-  if (!figli.length) return proprie;
+  if (!figli.length) return proprie > 0 ? proprie : oreEreditateDalParent(t);
   const sommaFigli = figli.reduce((s, f) => s + stimaOreEffettiva(f), 0);
-  return Math.max(0, proprie - sommaFigli);
+  if (sommaFigli > 0) return Math.max(0, proprie - sommaFigli);
+  return proprie / (1 + figli.length);
 }
 
 // Costo del task in euro: Σ (stimaOre × effort% × costoOrario persona)
