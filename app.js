@@ -4136,9 +4136,11 @@ function renderWorkload() {
     const laneOf = new Map();
     tasksPersona.forEach(t => {
       let assigned = -1;
+      const tDate = dateEffettive(t);
       for (let i = 0; i < corsie.length; i++) {
         const ultima = corsie[i][corsie[i].length - 1];
-        if (ultima.fine < t.inizio) { assigned = i; break; }
+        const uDate = dateEffettive(ultima);
+        if ((uDate.fine || '') < (tDate.inizio || '')) { assigned = i; break; }
       }
       if (assigned === -1) {
         corsie.push([t]);
@@ -4163,8 +4165,11 @@ function renderWorkload() {
 
     // Barre task — ciascuna posizionata su una corsia diversa
     const barreTask = tasksPersona.map(t => {
-      const start = new Date(t.inizio);
-      const end = new Date(t.fine);
+      // Date ereditate dal parent per sub-task senza date proprie
+      const { inizio: tInizio, fine: tFine } = dateEffettive(t);
+      if (!tInizio || !tFine) return '';
+      const start = new Date(tInizio);
+      const end = new Date(tFine);
       const off = Math.round((start - minDate) / 86400000);
       const dur = Math.round((end - start) / 86400000) + 1;
       const left = off * dayW;
@@ -4172,8 +4177,9 @@ function renderWorkload() {
       const lane = laneOf.get(t.id);
       const top = lane * LANE_H + 3;
       const a = t.assegnazioni.find(x => x.personaId === p.id);
-      const orePersona = (Number(t.stimaOre) || 0) * (Number(a.effort) || 0) / 100;
-      const tooltip = `${t.nome}\n${a.effort}% × ${t.stimaOre}h = ${orePersona.toFixed(1)}h`;
+      const oreEff = oreResidueTask(t);
+      const orePersona = oreEff * (Number(a.effort) || 0) / 100;
+      const tooltip = `${t.nome}\n${a.effort}% × ${oreEff.toFixed(1)}h = ${orePersona.toFixed(1)}h`;
       return `<div class="wl-task-bar stato-${t.stato}"
                    style="left:${left}px; width:${width}px; top:${top}px"
                    data-id="${t.id}"
