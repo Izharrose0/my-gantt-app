@@ -4129,7 +4129,7 @@ function renderWorkload() {
       .filter(t => !eEpica(t.id) && !eMilestone(t.id))
       .filter(t => !ammessi || ammessi.has(t.id))
       .filter(t => t.assegnazioni.some(a => a.personaId === p.id))
-      .sort((a, b) => a.inizio.localeCompare(b.inizio));
+      .sort((a, b) => (dateEffettive(a).inizio || '').localeCompare(dateEffettive(b).inizio || ''));
 
     // Algoritmo greedy per assegnare i task a corsie senza sovrapposizioni
     const corsie = []; // ogni corsia è una array di task (in ordine)
