@@ -382,6 +382,32 @@ input:focus, select:focus {
   justify-content: flex-end;
 }
 .epica-persona-row .epica-persona-meta strong { color: var(--color-text); }
+/* Lista sotto-task nel riepilogo */
+.epica-subtask-list {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.epica-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+}
+.epica-subtask-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+.epica-subtask-row .avatar-group { flex-shrink: 0; }
+
 .epica-riepilogo-empty {
   font-style: italic;
   color: var(--color-text-muted);

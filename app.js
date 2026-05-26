@@ -2946,6 +2946,10 @@ function apriModaleTask(id) {
 
   document.getElementById('edit-nome').value = t.nome;
 
+  // Reset del riepilogo sub-task (verrà mostrato dopo se il task ha figli)
+  const sezRiep = document.getElementById('epica-riepilogo');
+  if (sezRiep) { sezRiep.style.display = ''; sezRiep.innerHTML = ''; }
+
   // Importanza/Urgenza: validi per tutti i tipi (task, epica, milestone)
   document.getElementById('edit-importanza').value = clampEisen(t.importanza, 3);
   document.getElementById('edit-urgenza').value    = clampEisen(t.urgenza, 3);
@@ -2974,6 +2978,13 @@ function apriModaleTask(id) {
     renderDipendenze('lista-dipendenze-edit', tempDipendenzeEdit, t.id);
 
     popolaSelectPadre('edit-parent', t.id, t.parentId);
+
+    // Se il task ha sotto-task, mostra il riepilogo (come per le epiche)
+    if (haFigli(t.id)) {
+      renderEpicaRiepilogo(t);
+      const sez = document.getElementById('epica-riepilogo');
+      if (sez) sez.style.display = 'block';
+    }
   }
 
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -4600,11 +4611,13 @@ function aggregazioniEpica(epica) {
   return Array.from(acc.values()).sort((a, b) => b.ore - a.ore);
 }
 
-function renderEpicaRiepilogo(epica) {
+function renderEpicaRiepilogo(parent) {
   const cont = document.getElementById('epica-riepilogo');
   if (!cont) return;
-  const agg = aggregaEpica(epica);
-  const persone = aggregazioniEpica(epica);
+  const isEpicaTipo = parent.tipo === 'epica';
+  const figli = stato.task.filter(t => t.parentId === parent.id);
+  const agg = aggregaEpica(parent);
+  const persone = aggregazioniEpica(parent);
   const oreTotali = persone.reduce((s, x) => s + x.ore, 0);
 
   const personeHtml = persone.length
@@ -4625,8 +4638,29 @@ function renderEpicaRiepilogo(epica) {
       }).join('')
     : '<div class="epica-riepilogo-empty">Nessuna persona assegnata ai task figli.</div>';
 
+  // Lista sub-task con stato
+  const subTaskHtml = figli.length ? `
+    <div class="epica-subtask-list">
+      <strong style="font-size:0.78rem;color:var(--color-text-muted)">Sotto-task (${figli.length}):</strong>
+      ${figli.map(st => {
+        const stInfo = STATI_TASK[st.stato] || STATI_TASK.todo;
+        const stOre = Number(st.stimaOre) || 0;
+        const stAssig = (st.assegnazioni || []).map(a => trovaPersona(a.personaId)).filter(Boolean);
+        const stAvatars = stAssig.slice(0, 3).map(p => avatar(p, 'xs')).join('');
+        return `
+          <div class="epica-subtask-row">
+            <span class="gantt-stato-dot stato-bg-${st.stato || 'todo'}" title="${escapeHtml(stInfo.label)}"></span>
+            <span class="epica-subtask-name">${escapeHtml(st.nome)}</span>
+            ${stOre > 0 ? `<span class="label-fte">${stOre}h</span>` : ''}
+            ${stAvatars ? `<span class="avatar-group">${stAvatars}</span>` : ''}
+          </div>`;
+      }).join('')}
+    </div>` : '';
+
+  const titoloRiepilogo = isEpicaTipo ? 'Riepilogo epica' : `Riepilogo (${figli.length} sotto-task)`;
+
   cont.innerHTML = `
-    <h4>Riepilogo epica</h4>
+    <h4>${titoloRiepilogo}</h4>
     <div class="epica-riepilogo-totale">
       <span><strong>${agg.stimaOre || 0}h</strong> stimate</span>
       <span><strong>${oreTotali.toFixed(1)}h</strong> allocate</span>
@@ -4634,6 +4668,7 @@ function renderEpicaRiepilogo(epica) {
       <span><strong>${agg.completamento || 0}%</strong> completato</span>
     </div>
     <div class="epica-riepilogo-persone">${personeHtml}</div>
+    ${subTaskHtml}
   `;
 }
 
