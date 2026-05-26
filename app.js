@@ -1471,7 +1471,8 @@ function passaFiltri(t, f) {
     if (t.id !== f.epica && !eAntenato(f.epica, t.id)) return false;
   }
   if (f.dataDa || f.dataA) {
-    const ti = t.inizio, tf = t.fine;
+    // Usa date ereditate dal parent per sub-task senza date proprie
+    const { inizio: ti, fine: tf } = dateEffettive(t);
     if (!ti || !tf) return f.epica ? true : false;
     if (f.dataA && ti > f.dataA) return false;
     if (f.dataDa && tf < f.dataDa) return false;
