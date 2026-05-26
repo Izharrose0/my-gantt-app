@@ -1908,8 +1908,9 @@ function giorniLavorativi(inizioISO, fineISO, personaId) {
 
 // Ore-uomo assegnate complessivamente: stimaOre × Σ(effort%) / 100
 // (con assegnazioni che dovrebbero sommare 100%, questo coincide con stimaOre)
+// Ore-uomo allocate per il task: usa le ore RESIDUE (tolti i sotto-task)
 function effortAllocato(t) {
-  const stima = Number(t.stimaOre) || 0;
+  const stima = oreResidueTask(t);
   const sommaEffort = t.assegnazioni.reduce((s, a) => s + (Number(a.effort) || 0), 0);
   return Math.round(stima * sommaEffort / 100);
 }
@@ -1917,8 +1918,10 @@ function effortAllocato(t) {
 // Ore/giorno lavorativo per una singola persona su un task.
 // Conta solo i giorni lavorativi della *persona* (escludendo le sue ferie),
 // così se ha 3 giorni di ferie nel periodo le ore vengono concentrate sugli altri.
+// Ore/giorno lavorativo per una persona su un task. Se il task ha sotto-task,
+// usa le ore RESIDUE (proprie - somma figli) perché i figli portano le loro.
 function oreGiornaliereAssegnazione(t, assegnazione) {
-  const stima = Number(t.stimaOre) || 0;
+  const stima = oreResidueTask(t);
   if (!stima) return 0;
   const ggLav = giorniLavorativi(t.inizio, t.fine, assegnazione.personaId);
   if (!ggLav) return 0;
@@ -1926,9 +1929,34 @@ function oreGiornaliereAssegnazione(t, assegnazione) {
   return orePersona / ggLav;
 }
 
+// Ore totali effettive di un task: max tra le proprie e la somma dei figli.
+// "Comanda il numero più grande": se i figli sommano più del parent, il parent
+// si adatta; se il parent ha più ore dei figli, il residuo è per il parent.
+function stimaOreEffettiva(t) {
+  const proprie = Number(t.stimaOre) || 0;
+  const figli = stato.task.filter(f => f.parentId === t.id);
+  if (!figli.length) return proprie;
+  const sommaFigli = figli.reduce((s, f) => s + stimaOreEffettiva(f), 0);
+  return Math.max(proprie, sommaFigli);
+}
+
+// Ore residue per il task stesso (dopo aver "tolto" le ore dei sotto-task).
+// Queste sono le ore che gli assignee del parent effettivamente lavorano.
+// Es: parent 40h → sub-task 24h → parent residuo = 16h.
+// Es: parent 40h → sub-task 40h + 40h → parent residuo = 0h (figli comandano).
+function oreResidueTask(t) {
+  const proprie = Number(t.stimaOre) || 0;
+  const figli = stato.task.filter(f => f.parentId === t.id);
+  if (!figli.length) return proprie;
+  const sommaFigli = figli.reduce((s, f) => s + stimaOreEffettiva(f), 0);
+  return Math.max(0, proprie - sommaFigli);
+}
+
 // Costo del task in euro: Σ (stimaOre × effort% × costoOrario persona)
+// Costo del task: usa le ore RESIDUE (tolti i sotto-task) per gli assignee
+// del parent. I sotto-task calcolano il proprio costo indipendentemente.
 function costoTask(t) {
-  const stima = Number(t.stimaOre) || 0;
+  const stima = oreResidueTask(t);
   if (!stima || !Array.isArray(t.assegnazioni)) return 0;
   return t.assegnazioni.reduce((sum, a) => {
     const p = stato.persone.find(x => x.id === a.personaId);
