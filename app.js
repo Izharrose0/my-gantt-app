@@ -4130,7 +4130,11 @@ function renderWorkload() {
       .filter(t => t.stato !== 'done')
       .filter(t => !ammessi || ammessi.has(t.id))
       .filter(t => t.assegnazioni.some(a => a.personaId === p.id))
-      .sort((a, b) => (dateEffettive(a).inizio || '').localeCompare(dateEffettive(b).inizio || ''));
+      // Escludi sub-task senza date proprie dalla visualizzazione barre:
+      // contribuiscono al % giornaliero (heat strip) ma non hanno barra
+      // separata, altrimenti si creano 20+ linee impilate dal parent.
+      .filter(t => t.inizio && t.fine)
+      .sort((a, b) => (a.inizio || '').localeCompare(b.inizio || ''));
 
     // Algoritmo greedy per assegnare i task a corsie senza sovrapposizioni
     const corsie = []; // ogni corsia è una array di task (in ordine)
