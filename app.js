@@ -1012,8 +1012,8 @@ function calcolaAllocazioniPeriodo(dataDa, dataA) {
     let totaleH = 0;
     stato.task.forEach(t => {
       if (t.tipo === 'epica' || t.tipo === 'milestone') return;
+      if (t.stato === 'done') return;
       if (!t.assegnazioni?.length) return;
-      // Usa ore residue (rispetta divisione parent/sub-task)
       const oreTask = oreResidueTask(t);
       if (!oreTask) return;
       const a = t.assegnazioni.find(x => x.personaId === p.id);
@@ -3970,9 +3970,9 @@ function calcolaCaricoPersone(ammessi = null) {
   stato.persone.forEach(p => { carico[p.id] = {}; });
   stato.task.forEach(t => {
     if (eEpica(t.id) || eMilestone(t.id)) return;
+    if (t.stato === 'done') return;
     if (ammessi && !ammessi.has(t.id)) return;
     if (!t.assegnazioni.length) return;
-    // Usa ore residue (divisione parent/sub-task) e date ereditate
     const oreTask = oreResidueTask(t);
     if (!oreTask) return;
     const { inizio, fine } = dateEffettive(t);
@@ -4127,6 +4127,7 @@ function renderWorkload() {
     // Task assegnati a questa persona (solo foglie, escluse milestone), filtrati
     const tasksPersona = stato.task
       .filter(t => !eEpica(t.id) && !eMilestone(t.id))
+      .filter(t => t.stato !== 'done')
       .filter(t => !ammessi || ammessi.has(t.id))
       .filter(t => t.assegnazioni.some(a => a.personaId === p.id))
       .sort((a, b) => (dateEffettive(a).inizio || '').localeCompare(dateEffettive(b).inizio || ''));
