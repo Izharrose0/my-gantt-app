@@ -1012,12 +1012,18 @@ function calcolaAllocazioniPeriodo(dataDa, dataA) {
     let totaleH = 0;
     stato.task.forEach(t => {
       if (t.tipo === 'epica' || t.tipo === 'milestone') return;
-      if (!t.assegnazioni?.length || !t.stimaOre) return;
+      if (!t.assegnazioni?.length) return;
+      // Usa ore residue (rispetta divisione parent/sub-task)
+      const oreTask = oreResidueTask(t);
+      if (!oreTask) return;
       const a = t.assegnazioni.find(x => x.personaId === p.id);
       if (!a) return;
+      // Date effettive (ereditate dal parent se mancanti)
+      const { inizio: tInizio, fine: tFine } = dateEffettive(t);
+      if (!tInizio || !tFine) return;
       // Intersezione tra range richiesto e durata task
-      const inizioInt = t.inizio > dataDa ? t.inizio : dataDa;
-      const fineInt = t.fine < dataA ? t.fine : dataA;
+      const inizioInt = tInizio > dataDa ? tInizio : dataDa;
+      const fineInt = tFine < dataA ? tFine : dataA;
       if (inizioInt > fineInt) return;
       const giorniInter = rangeDateISO(inizioInt, fineInt);
       // Quanti giorni LAVORATIVI di p nel periodo sono coperti dal task
@@ -1919,14 +1925,32 @@ function effortAllocato(t) {
 // Conta solo i giorni lavorativi della *persona* (escludendo le sue ferie),
 // così se ha 3 giorni di ferie nel periodo le ore vengono concentrate sugli altri.
 // Ore/giorno lavorativo per una persona su un task. Se il task ha sotto-task,
-// usa le ore RESIDUE (proprie - somma figli) perché i figli portano le loro.
+// usa le ore RESIDUE. Se il task non ha date, eredita quelle del parent.
 function oreGiornaliereAssegnazione(t, assegnazione) {
   const stima = oreResidueTask(t);
   if (!stima) return 0;
-  const ggLav = giorniLavorativi(t.inizio, t.fine, assegnazione.personaId);
+  const { inizio, fine } = dateEffettive(t);
+  if (!inizio || !fine) return 0;
+  const ggLav = giorniLavorativi(inizio, fine, assegnazione.personaId);
   if (!ggLav) return 0;
   const orePersona = stima * (Number(assegnazione.effort) || 0) / 100;
   return orePersona / ggLav;
+}
+
+// Se un sotto-task non ha date proprie, eredita quelle del parent.
+// Fondamentale per il Workload: senza date la task non contribuisce ore a
+// nessuna settimana anche se ha stimaOre.
+function dateEffettive(t) {
+  let inizio = t.inizio || null;
+  let fine   = t.fine   || null;
+  if ((!inizio || !fine) && t.parentId) {
+    const parent = stato.task.find(p => p.id === t.parentId);
+    if (parent) {
+      if (!inizio) inizio = parent.inizio || null;
+      if (!fine)   fine   = parent.fine   || null;
+    }
+  }
+  return { inizio, fine };
 }
 
 // Se un sotto-task ha 0h e TUTTI i fratelli hanno 0h, eredita una quota
@@ -3946,8 +3970,13 @@ function calcolaCaricoPersone(ammessi = null) {
   stato.task.forEach(t => {
     if (eEpica(t.id) || eMilestone(t.id)) return;
     if (ammessi && !ammessi.has(t.id)) return;
-    if (!t.assegnazioni.length || !t.stimaOre) return;
-    const giorniTask = rangeDateISO(t.inizio, t.fine);
+    if (!t.assegnazioni.length) return;
+    // Usa ore residue (divisione parent/sub-task) e date ereditate
+    const oreTask = oreResidueTask(t);
+    if (!oreTask) return;
+    const { inizio, fine } = dateEffettive(t);
+    if (!inizio || !fine) return;
+    const giorniTask = rangeDateISO(inizio, fine);
     t.assegnazioni.forEach(a => {
       if (!carico[a.personaId]) return;
       const orePerGiorno = oreGiornaliereAssegnazione(t, a);
