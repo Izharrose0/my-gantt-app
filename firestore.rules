@@ -2,11 +2,16 @@ rules_version = '2';
 
 // Regole di sicurezza Firestore per MY-GANTT.
 //
-// Modello:
-// - OWNER (`i.coletti@invrsion.com`) può leggere e scrivere tutto.
-// - VIEWER (email nella lista /config/auth.viewerEmails) possono SOLO leggere
-//   i dati del workspace.
-// - Chiunque altro: nessun accesso.
+// Tre ruoli:
+// - OWNER (`i.coletti@invrsion.com`): legge e scrive tutto, gestisce
+//   whitelist accessi.
+// - EDITOR (email in /config/auth.editorEmails): legge tutto, modifica
+//   task/persone/festivita; NON pu\xf2 modificare la whitelist accessi.
+// - VIEWER (email in /config/auth.viewerEmails): sola lettura.
+// - Altri: nessun accesso.
+//
+// L'eliminazione completa del documento workspace e' riservata all'owner
+// (gli editor possono solo update via setDoc/updateDoc).
 //
 // DEPLOY:
 //   firebase deploy --only firestore:rules
@@ -20,32 +25,51 @@ service cloud.firestore {
         && request.auth.token.email == 'i.coletti@invrsion.com';
     }
 
-    // Lista email autorizzate a leggere: storata in /config/auth.viewerEmails.
-    // get() in rules bypassa le altre rules (operazione privilegiata), quindi
-    // questo legge il doc anche se il chiamante non avrebbe diritto.
-    // Se il doc non esiste, restituisce lista vuota -> solo owner pu\xf2 leggere.
-    function viewerEmails() {
-      let cfg = get(/databases/$(database)/documents/config/auth);
-      return cfg.data.viewerEmails is list ? cfg.data.viewerEmails : [];
+    function authCfg() {
+      return get(/databases/$(database)/documents/config/auth).data;
     }
 
-    function isAuthorized() {
+    function editorEmails() {
+      let d = authCfg();
+      return d.editorEmails is list ? d.editorEmails : [];
+    }
+
+    function viewerEmails() {
+      let d = authCfg();
+      return d.viewerEmails is list ? d.viewerEmails : [];
+    }
+
+    function isEditor() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && (request.auth.token.email == 'i.coletti@invrsion.com'
-            || request.auth.token.email in viewerEmails());
+        && (isOwner() || request.auth.token.email in editorEmails());
     }
 
-    // Dati del workspace (task, persone, ferie, ecc.): lettura per viewer
-    // autorizzati + owner; scrittura solo owner.
+    function isViewer() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (isEditor() || request.auth.token.email in viewerEmails());
+    }
+
+    // Dati del workspace: viewer legge, editor modifica, owner elimina.
     match /workspaces/{doc=**} {
-      allow read:  if isAuthorized();
+      allow read:           if isViewer();
+      allow create, update: if isEditor();
+      allow delete:         if isOwner();
+    }
+
+    // /config/auth (whitelist viewer+editor): SOLO owner pu\xf2 modificare.
+    // Lettura permessa a tutti gli utenti autorizzati cosi' il client puo'
+    // determinare il proprio ruolo.
+    match /config/auth {
+      allow read:  if isViewer();
       allow write: if isOwner();
     }
 
-    // Config auth (whitelist): solo owner pu\xf2 vederla e modificarla.
-    match /config/{doc=**} {
-      allow read, write: if isOwner();
+    // /config/{altri doc} (es. jira projects): editor pu\xf2 modificare.
+    match /config/{doc} {
+      allow read:  if isViewer();
+      allow write: if isEditor();
     }
   }
 }

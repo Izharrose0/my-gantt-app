@@ -6,40 +6,87 @@ let stato = {
   team: []       // [{ id, nome, colore, ordine }]
 };
 
-// ===== AUTH / OWNER =====
-// Email dell'unico utente autorizzato a modificare. Chi non e' loggato con
-// questa email puo' solo visualizzare (Firestore rules + gating UI).
+// ===== AUTH / RUOLI =====
+// Tre ruoli (vedi firestore.rules):
+// - OWNER: i.coletti@invrsion.com, accesso totale
+// - EDITOR: email in /config/auth.editorEmails, puo' modificare dati
+// - VIEWER: email in /config/auth.viewerEmails, sola lettura
 const OWNER_EMAIL = 'i.coletti@invrsion.com';
-let utenteCorrente = null; // firebase User | null
+let utenteCorrente = null;     // firebase User | null
+let editorEmailsCache = [];     // cache popolata al boot
 
 function isOwner() {
   return utenteCorrente?.email === OWNER_EMAIL;
 }
+function isEditor() {
+  if (!utenteCorrente?.email) return false;
+  if (isOwner()) return true;
+  return editorEmailsCache.includes(utenteCorrente.email);
+}
 
-// Aggiorna la UI in base al ruolo (owner vs viewer): badge, voci kebab,
-// classi sul body. Le regole CSS in style.css fanno il vero hiding.
+// Override locale del ruolo per anteprima "vista come..." (per-utente,
+// persistito in localStorage). Non puo' MAI espandere i permessi reali.
+const RUOLO_PREVIEW_KEY = 'gantt-app-ruolo-preview';
+function ruoloEffettivoBase() {
+  if (isOwner()) return 'owner';
+  if (isEditor()) return 'editor';
+  return 'viewer';
+}
+function ruoloPreview() {
+  return localStorage.getItem(RUOLO_PREVIEW_KEY) || '';
+}
+function ruoloCorrente() {
+  const base = ruoloEffettivoBase();
+  const preview = ruoloPreview();
+  if (!preview) return base;
+  // L'override puo' solo RIDURRE i permessi visualizzati, mai aumentarli
+  const ordine = { viewer: 0, editor: 1, owner: 2 };
+  if ((ordine[preview] ?? 2) <= (ordine[base] ?? 0)) return preview;
+  return base;
+}
+function setRuoloPreview(r) {
+  if (!r || r === ruoloEffettivoBase()) localStorage.removeItem(RUOLO_PREVIEW_KEY);
+  else localStorage.setItem(RUOLO_PREVIEW_KEY, r);
+  aggiornaUIPermessi();
+}
+
+// Aggiorna la UI in base al ruolo: badge, classi sul body. Le regole CSS
+// (.only-owner, .only-editor) fanno il vero hiding.
 function aggiornaUIPermessi() {
-  const role = isOwner() ? 'owner' : 'viewer';
+  const role = ruoloCorrente();
   document.body.setAttribute('data-role', role);
   const badge = document.getElementById('role-badge');
   if (badge) {
-    badge.classList.toggle('role-owner', role === 'owner');
-    badge.classList.toggle('role-viewer', role === 'viewer');
+    badge.classList.remove('role-owner', 'role-editor', 'role-viewer');
+    badge.classList.add(`role-${role}`);
     const label = badge.querySelector('.role-label');
-    if (label) label.textContent = role === 'owner' ? 'OWNER' : 'VIEW ONLY';
-    badge.title = role === 'owner'
-      ? `Loggato come ${utenteCorrente.email} — puoi modificare`
-      : 'Sola lettura — solo l\'owner può modificare';
+    if (label) label.textContent = role === 'owner' ? 'OWNER' : role === 'editor' ? 'EDITOR' : 'VIEW ONLY';
+    const base = ruoloEffettivoBase();
+    const previewing = role !== base;
+    badge.title = previewing
+      ? `Loggato come ${utenteCorrente.email} (${base}) — anteprima vista ${role}`
+      : `Loggato come ${utenteCorrente.email} — ruolo ${role}`;
   }
   const logoutLabel = document.getElementById('logout-label');
   if (logoutLabel && utenteCorrente) {
     logoutLabel.textContent = `Esci (${utenteCorrente.email.split('@')[0]})`;
   }
-  // Nascondi le righe del modale-task editing per i viewer
+  // Login/Logout: mostra/nascondi in base allo stato auth
+  const btnLogin = document.getElementById('btn-login-email');
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogin)  btnLogin.classList.toggle('hidden', !!utenteCorrente);
+  if (btnLogout) btnLogout.classList.toggle('hidden', !utenteCorrente);
+  // Highlight item attivo nel selector "Vista come"
+  const preview = ruoloPreview();
+  document.querySelectorAll('.kebab-vista-opt').forEach(el => {
+    const v = el.dataset.vista;
+    const active = (v === 'base' && !preview) || v === preview;
+    el.classList.toggle('vista-attiva', active);
+  });
   const formModifica = document.getElementById('form-modifica-task');
   if (formModifica) {
     const submit = formModifica.querySelector('button[type="submit"]');
-    if (submit) submit.style.display = role === 'owner' ? '' : 'none';
+    if (submit) submit.style.display = (role === 'owner' || role === 'editor') ? '' : 'none';
   }
 }
 
@@ -53,17 +100,19 @@ function inizializzaAuth() {
     aggiornaUIPermessi();
     return;
   }
-  fb.onAuthStateChanged(fb.auth, user => {
+  fb.onAuthStateChanged(fb.auth, async user => {
     utenteCorrente = user;
     console.log('[AUTH] onAuthStateChanged →', user?.email || 'logged out');
-    aggiornaUIPermessi();
     if (user) {
-      // Login OK: tolgo il banner e parte la sync Firestore. Se l'utente
-      // non e' nella whitelist, il listener fallira' subito con
-      // permission-denied e il banner riapparira'.
+      // Carica la lista editor (per isEditor() lato client) PRIMA di
+      // aggiornare la UI, cosi' i permessi sono corretti al primo render.
+      try { await ricaricaCacheRuoli(); } catch {}
+      aggiornaUIPermessi();
       rimuoviBannerAccesso();
       try { avviaSyncFirestore(); } catch {}
     } else {
+      editorEmailsCache = [];
+      aggiornaUIPermessi();
       // Logout (o stato iniziale "non loggato"): chiudo la sottoscrizione,
       // svuoto lo stato e mostro il banner di login.
       terminaSyncFirestore();
@@ -185,6 +234,15 @@ function inizializzaAuth() {
     document.getElementById('modal-assoc-persone-overlay').classList.add('hidden');
   });
 
+  // "Vista come": override locale del ruolo per anteprima
+  document.querySelectorAll('.kebab-vista-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.vista;
+      setRuoloPreview(v === 'base' ? '' : v);
+      document.getElementById('kebab-dropdown')?.classList.add('hidden');
+    });
+  });
+
   // Click "Gestisci accessi" → apri modale whitelist
   document.getElementById('btn-gestisci-accessi')?.addEventListener('click', apriModaleAccessi);
   document.getElementById('btn-chiudi-modal-accessi')?.addEventListener('click', () => {
@@ -193,9 +251,10 @@ function inizializzaAuth() {
   document.getElementById('form-accessi-add')?.addEventListener('submit', async e => {
     e.preventDefault();
     const input = document.getElementById('accessi-email-nuova');
+    const ruolo = document.getElementById('accessi-ruolo-nuovo')?.value || 'viewer';
     const email = (input.value || '').trim().toLowerCase();
     if (!email) return;
-    await aggiungiAccessoEmail(email);
+    await aggiungiAccessoEmail(email, ruolo);
     input.value = '';
   });
   document.getElementById('btn-vis-tutti')?.addEventListener('click', () => setVisibilitaTutte(false));
@@ -440,33 +499,42 @@ const CONFIG_AUTH_PATH = ['config', 'auth'];
 
 async function caricaWhitelist() {
   const fb = window.__firebase;
-  if (!fb || !fb.db || !fb.doc) return { viewerEmails: [] };
+  if (!fb || !fb.db || !fb.doc) return { viewerEmails: [], editorEmails: [] };
   try {
     const ref = fb.doc(fb.db, ...CONFIG_AUTH_PATH);
     const { getDoc } = await import('https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js');
     const snap = await getDoc(ref);
-    if (!snap.exists()) return { viewerEmails: [] };
+    if (!snap.exists()) return { viewerEmails: [], editorEmails: [] };
     const data = snap.data() || {};
     return {
-      viewerEmails: Array.isArray(data.viewerEmails) ? data.viewerEmails : []
+      viewerEmails: Array.isArray(data.viewerEmails) ? data.viewerEmails : [],
+      editorEmails: Array.isArray(data.editorEmails) ? data.editorEmails : []
     };
   } catch (e) {
     console.warn('caricaWhitelist:', e);
-    return { viewerEmails: [] };
+    return { viewerEmails: [], editorEmails: [] };
   }
 }
 
-async function salvaWhitelist(viewerEmails) {
+async function salvaWhitelist(payload) {
+  // payload: { viewerEmails?: [], editorEmails?: [] } — merge solo i campi passati
   const fb = window.__firebase;
   if (!fb || !fb.db || !fb.doc || !fb.setDoc) return false;
   try {
     const ref = fb.doc(fb.db, ...CONFIG_AUTH_PATH);
-    await fb.setDoc(ref, { viewerEmails }, { merge: true });
+    await fb.setDoc(ref, payload, { merge: true });
     return true;
   } catch (e) {
     alert('Salvataggio fallito: ' + (e.message || e.code || e));
     return false;
   }
+}
+
+// Carica gli editor email e li mette in cache (per isEditor() lato client).
+// Chiamata dopo l'autenticazione.
+async function ricaricaCacheRuoli() {
+  const cfg = await caricaWhitelist();
+  editorEmailsCache = cfg.editorEmails || [];
 }
 
 async function apriModaleAccessi() {
@@ -475,41 +543,71 @@ async function apriModaleAccessi() {
 }
 
 async function renderListaAccessi() {
-  const ul = document.getElementById('lista-accessi');
-  if (!ul) return;
-  ul.innerHTML = '<li class="empty-state">Caricamento…</li>';
+  const ulV = document.getElementById('lista-accessi');
+  const ulE = document.getElementById('lista-accessi-editor');
+  if (!ulV) return;
+  ulV.innerHTML = '<li class="empty-state">Caricamento…</li>';
+  if (ulE) ulE.innerHTML = '<li class="empty-state">Caricamento…</li>';
   const cfg = await caricaWhitelist();
+
+  // Viewer
   if (!cfg.viewerEmails.length) {
-    ul.innerHTML = '<li class="empty-state">Nessuna email autorizzata oltre all\'owner.</li>';
-    return;
-  }
-  ul.innerHTML = cfg.viewerEmails
-    .slice()
-    .sort()
-    .map(e => `
+    ulV.innerHTML = '<li class="empty-state">Nessun viewer oltre all\'owner/editor.</li>';
+  } else {
+    ulV.innerHTML = cfg.viewerEmails.slice().sort().map(e => `
       <li class="acc-row">
         <code>${escapeHtml(e)}</code>
-        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-email="${escapeHtml(e)}">Rimuovi</button>
+        <button type="button" class="btn btn-danger btn-sm" data-rimuovi-viewer="${escapeHtml(e)}">Rimuovi</button>
       </li>`).join('');
-  ul.querySelectorAll('[data-rimuovi-email]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const email = btn.dataset.rimuoviEmail;
-      if (!confirm(`Rimuovere "${email}" dalla whitelist?`)) return;
-      const cfg = await caricaWhitelist();
-      const updated = cfg.viewerEmails.filter(x => x !== email);
-      if (await salvaWhitelist(updated)) renderListaAccessi();
+    ulV.querySelectorAll('[data-rimuovi-viewer]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const email = btn.dataset.rimuoviViewer;
+        if (!confirm(`Rimuovere "${email}" dai viewer?`)) return;
+        const c = await caricaWhitelist();
+        const updated = c.viewerEmails.filter(x => x !== email);
+        if (await salvaWhitelist({ viewerEmails: updated })) renderListaAccessi();
+      });
     });
-  });
+  }
+
+  // Editor
+  if (ulE) {
+    if (!cfg.editorEmails.length) {
+      ulE.innerHTML = '<li class="empty-state">Nessun editor configurato.</li>';
+    } else {
+      ulE.innerHTML = cfg.editorEmails.slice().sort().map(e => `
+        <li class="acc-row">
+          <code>${escapeHtml(e)}</code>
+          <button type="button" class="btn btn-danger btn-sm" data-rimuovi-editor="${escapeHtml(e)}">Rimuovi</button>
+        </li>`).join('');
+      ulE.querySelectorAll('[data-rimuovi-editor]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const email = btn.dataset.rimuoviEditor;
+          if (!confirm(`Rimuovere "${email}" dagli editor?`)) return;
+          const c = await caricaWhitelist();
+          const updated = c.editorEmails.filter(x => x !== email);
+          if (await salvaWhitelist({ editorEmails: updated })) {
+            await ricaricaCacheRuoli();
+            renderListaAccessi();
+          }
+        });
+      });
+    }
+  }
 }
 
-async function aggiungiAccessoEmail(email) {
+async function aggiungiAccessoEmail(email, ruolo = 'viewer') {
   const cfg = await caricaWhitelist();
-  if (cfg.viewerEmails.includes(email)) {
-    alert('Questa email è già nella whitelist.');
+  const key = ruolo === 'editor' ? 'editorEmails' : 'viewerEmails';
+  if (cfg[key].includes(email)) {
+    alert(`Email gia' presente come ${ruolo}.`);
     return;
   }
-  const updated = [...cfg.viewerEmails, email];
-  if (await salvaWhitelist(updated)) renderListaAccessi();
+  const updated = [...cfg[key], email];
+  if (await salvaWhitelist({ [key]: updated })) {
+    if (ruolo === 'editor') await ricaricaCacheRuoli();
+    renderListaAccessi();
+  }
 }
 
 // ===== TRIGGER WORKFLOW GITHUB ACTIONS DA APP =====
@@ -1776,10 +1874,11 @@ function salvaStato() {
   // Se Firebase non è disponibile, resta in modalità locale
   if (!window.__firebase) return;
 
-  // Difensivo: i viewer non possono scrivere su Firestore. Le rules server-side
-  // bloccano comunque la write; qui evitiamo anche solo di tentare.
-  if (!isOwner()) {
-    console.warn('Skip Firestore write: utente non owner.');
+  // Difensivo: i viewer non possono scrivere su Firestore. Editor+Owner si',
+  // gli viewer no. Le rules server-side bloccano comunque la write; qui evitiamo
+  // anche solo di tentare la chiamata.
+  if (!isEditor()) {
+    console.warn('Skip Firestore write: utente non editor.');
     return;
   }
 
@@ -4580,7 +4679,7 @@ function abilitaDragWorkload(dayW, minDate) {
       if (!t) return;
       // Niente drag per task readonly (epiche/milestone), o se viewer
       if (t.tipo === 'epica' || t.tipo === 'milestone') return;
-      if (!isOwner()) return;
+      if (!isEditor()) return;
 
       const startX = e.clientX;
       const startLeft = parseFloat(bar.style.left);
@@ -4719,7 +4818,7 @@ function chiudiModaleGiorno() {
 // Eisenhower (importanza + urgenza, desc). I task non-epica restano dove
 // sono (l'ordine all'interno di un'epica non viene toccato).
 function ordinaEpichePerEisenhower() {
-  if (!isOwner()) return;
+  if (!isEditor()) return;
   const epiche = stato.task
     .filter(t => t.tipo === 'epica' && !t.parentId)
     .slice()
@@ -4890,7 +4989,7 @@ function abilitaDragEisen(container) {
   cards.forEach(card => {
     card.setAttribute('draggable', 'true');
     card.addEventListener('dragstart', e => {
-      if (!isOwner()) { e.preventDefault(); return; }
+      if (!isEditor()) { e.preventDefault(); return; }
       draggingId = card.dataset.id;
       card.classList.add('dragging');
       try {
@@ -4934,7 +5033,7 @@ function abilitaDragEisen(container) {
       if (!id) return;
       const t = stato.task.find(x => x.id === id);
       if (!t) return;
-      if (!isOwner()) return;
+      if (!isEditor()) return;
       const newImp = clampEisen(cell.dataset.imp, t.importanza);
       const newUrg = clampEisen(cell.dataset.urg, t.urgenza);
       if (t.importanza === newImp && t.urgenza === newUrg) return;

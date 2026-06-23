@@ -39,23 +39,28 @@
             <button type="button" class="kebab-item kebab-nav" data-nav="persone">Persone</button>
             <div class="kebab-divider"></div>
           </div>
-          <button type="button" class="kebab-item only-owner" id="btn-progetti-jira">Progetti Jira</button>
-          <button type="button" class="kebab-item only-owner" id="btn-pull-jira">Pull da Jira → MY-GANTT</button>
-          <button type="button" class="kebab-item only-owner" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
-          <button type="button" class="kebab-item only-owner" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
-          <button type="button" class="kebab-item only-owner" id="btn-gestisci-vis-persone">Gestisci visibilità persone</button>
-          <button type="button" class="kebab-item only-owner" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
-          <button type="button" class="kebab-item only-owner" id="btn-gestisci-team">Gestisci team</button>
+          <button type="button" class="kebab-item only-editor" id="btn-progetti-jira">Progetti Jira</button>
+          <button type="button" class="kebab-item only-editor" id="btn-pull-jira">Pull da Jira → MY-GANTT</button>
+          <button type="button" class="kebab-item only-editor" id="btn-push-jira">Push MY-GANTT → Jira (date)</button>
+          <button type="button" class="kebab-item only-editor" id="btn-gestisci-visibilita">Gestisci visibilità epiche</button>
+          <button type="button" class="kebab-item only-editor" id="btn-gestisci-vis-persone">Gestisci visibilità persone</button>
+          <button type="button" class="kebab-item only-editor" id="btn-associa-persone">Associa persone Jira ↔ MY-GANTT</button>
+          <button type="button" class="kebab-item only-editor" id="btn-gestisci-team">Gestisci team</button>
           <button type="button" class="kebab-item only-owner" id="btn-gestisci-accessi">Gestisci accessi (whitelist)</button>
-          <div class="kebab-divider only-owner"></div>
+          <div class="kebab-divider only-editor"></div>
           <button type="button" class="kebab-item" id="btn-esporta">Esporta JSON</button>
-          <label class="kebab-item only-owner">
+          <label class="kebab-item only-editor">
             Importa JSON
             <input type="file" id="input-importa" accept=".json" hidden>
           </label>
           <div class="kebab-divider"></div>
-          <button type="button" class="kebab-item only-viewer" id="btn-login-email">Accedi come owner (link via email)</button>
-          <button type="button" class="kebab-item only-owner hidden" id="btn-logout">
+          <button type="button" class="kebab-item kebab-vista-section">Vista come:</button>
+          <button type="button" class="kebab-item kebab-vista-opt" data-vista="base">↻ Mio ruolo reale</button>
+          <button type="button" class="kebab-item kebab-vista-opt only-editor" data-vista="editor">👤 Editor</button>
+          <button type="button" class="kebab-item kebab-vista-opt" data-vista="viewer">👁 Viewer</button>
+          <div class="kebab-divider"></div>
+          <button type="button" class="kebab-item only-viewer" id="btn-login-email">Accedi (link via email)</button>
+          <button type="button" class="kebab-item" id="btn-logout">
             <span id="logout-label">Esci</span>
           </button>
         </div>
@@ -610,14 +615,22 @@
         <button class="btn-close" id="btn-chiudi-modal-accessi" type="button">×</button>
       </header>
       <p class="hint">
-        Solo l'owner e le email indicate sotto possono leggere i dati di MY-GANTT.
-        Le persone in lista devono fare login con la stessa email (Email Magic Link).
-        L'enforcement è server-side via Firestore rules, quindi è davvero a prova di manomissione.
+        Due livelli di accesso:
+        <strong>Viewer</strong> = sola lettura.
+        <strong>Editor</strong> = puo' anche modificare task, persone, festivita'.
+        Entrambi accedono via Email Magic Link. La gestione della whitelist resta dell'owner.
       </p>
       <form id="form-accessi-add" class="form-inline" style="margin-bottom:0.6rem">
         <input type="email" id="accessi-email-nuova" placeholder="email@esempio.com" required>
+        <select id="accessi-ruolo-nuovo">
+          <option value="viewer">Viewer</option>
+          <option value="editor">Editor</option>
+        </select>
         <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
       </form>
+      <h4 style="margin:0.8rem 0 0.3rem 0; font-size:0.85rem; text-transform:uppercase; color:var(--color-text-muted)">Editor</h4>
+      <ul id="lista-accessi-editor" class="lista"></ul>
+      <h4 style="margin:0.8rem 0 0.3rem 0; font-size:0.85rem; text-transform:uppercase; color:var(--color-text-muted)">Viewer</h4>
       <ul id="lista-accessi" class="lista"></ul>
     </div>
   </div>

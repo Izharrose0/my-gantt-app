@@ -2302,6 +2302,30 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .kebab-item:hover { background: var(--color-surface-3); color: var(--color-primary-hover); }
 
+/* Sezione "Vista come" nel kebab */
+.kebab-vista-section {
+  font-size: 0.7rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted) !important;
+  cursor: default !important;
+  padding: 0.5rem 0.8rem 0.2rem !important;
+}
+.kebab-vista-section:hover { background: transparent !important; color: var(--color-text-muted) !important; }
+.kebab-vista-opt {
+  font-size: 0.82rem !important;
+  padding-left: 1.2rem !important;
+}
+.kebab-vista-opt.vista-attiva {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+/* Badge ruolo: aggiungo lo stile per editor */
+#role-badge.role-editor .role-label { color: #f59e0b; }
+#role-badge.role-editor { border-color: #f59e0b; }
+
 /* ===== AVATAR cerchietto con iniziali ===== */
 .avatar {
   display: inline-flex;
@@ -3553,11 +3577,18 @@ body[data-locked="true"] .app-header .actions-top {
 .role-viewer { color: #94a3b8; }
 .role-owner  { color: #10b981; }
 
-/* Visibilità basata sul ruolo (controllata via body[data-role]) */
+/* Visibilità basata sul ruolo (controllata via body[data-role])
+   - .only-owner  visibile solo per owner
+   - .only-editor visibile per owner+editor (nascosto a viewer)
+   - .only-viewer visibile solo a viewer (es. banner "view-only") */
 .only-owner  { /* default: visibile */ }
+.only-editor { /* default: visibile */ }
 .only-viewer { /* default: visibile */ }
-body[data-role="viewer"] .only-owner  { display: none !important; }
+body[data-role="viewer"] .only-owner,
+body[data-role="viewer"] .only-editor { display: none !important; }
+body[data-role="editor"] .only-owner  { display: none !important; }
 body[data-role="owner"]  .only-viewer { display: none !important; }
+body[data-role="editor"] .only-viewer { display: none !important; }
 
 /* Viewer: nascondi tutti i controlli di scrittura */
 body[data-role="viewer"] {
