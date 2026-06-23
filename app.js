@@ -1237,7 +1237,7 @@ function stampaReport() {
   }, 100);
 }
 
-// ===== EXPORT GANTT: PNG (html2canvas via CDN lazy-load) =====
+// ===== EXPORT GANTT: helpers (lazy-load librerie CDN) =====
 async function caricaHtml2Canvas() {
   if (window.html2canvas) return window.html2canvas;
   await new Promise((res, rej) => {
@@ -1251,21 +1251,62 @@ async function caricaHtml2Canvas() {
   return window.html2canvas;
 }
 
-async function esportaGanttPNG() {
+async function caricaJsPDF() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = res;
+    s.onerror = () => rej(new Error('Impossibile caricare jsPDF'));
+    document.head.appendChild(s);
+  });
+  if (!window.jspdf?.jsPDF) throw new Error('jsPDF non disponibile');
+  return window.jspdf.jsPDF;
+}
+
+// Cattura il #gantt-container con html2canvas espandendo l'intera timeline
+// (rimuove temporaneamente max-height/overflow). Usata da PNG e PDF.
+async function catturaGanttCanvas() {
   const cont = document.getElementById('gantt-container');
-  if (!cont) return;
+  if (!cont) return null;
+  const h2c = await caricaHtml2Canvas();
+  const oldOverflow = cont.style.overflow;
+  const oldMaxH = cont.style.maxHeight;
+  const oldMinH = cont.style.minHeight;
+  const oldH = cont.style.height;
+  cont.style.overflow = 'visible';
+  cont.style.maxHeight = 'none';
+  cont.style.minHeight = 'auto';
+  cont.style.height = 'auto';
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+  const fullW = cont.scrollWidth;
+  const fullH = cont.scrollHeight;
+  const bg = getComputedStyle(document.body).backgroundColor || '#0b1220';
   try {
-    const h2c = await caricaHtml2Canvas();
-    // Snapshot dell'intero container (side column + timeline)
-    const canvas = await h2c(cont, {
-      backgroundColor: getComputedStyle(document.body).backgroundColor || '#ffffff',
+    return await h2c(cont, {
+      backgroundColor: bg,
       scale: window.devicePixelRatio > 1 ? 2 : 1.5,
       useCORS: true,
-      windowWidth: cont.scrollWidth,
-      windowHeight: cont.scrollHeight,
-      width: cont.scrollWidth,
-      height: cont.scrollHeight
+      windowWidth: fullW,
+      windowHeight: fullH,
+      width: fullW,
+      height: fullH,
+      scrollX: 0,
+      scrollY: 0
     });
+  } finally {
+    cont.style.overflow = oldOverflow;
+    cont.style.maxHeight = oldMaxH;
+    cont.style.minHeight = oldMinH;
+    cont.style.height = oldH;
+  }
+}
+
+async function esportaGanttPNG() {
+  try {
+    const canvas = await catturaGanttCanvas();
+    if (!canvas) return;
     canvas.toBlob(blob => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
@@ -1279,6 +1320,71 @@ async function esportaGanttPNG() {
     }, 'image/png');
   } catch (err) {
     alert('Errore export PNG: ' + (err?.message || err));
+  }
+}
+
+// PDF multi-pagina A4 portrait: ogni pagina contiene l'intera altezza del
+// Gantt (tutti i task) + una porzione di timeline. Le pagine si leggono
+// scorrendo verso il basso, ognuna copre un sottoinsieme di date.
+async function esportaGanttPDF() {
+  try {
+    const canvas = await catturaGanttCanvas();
+    if (!canvas) return;
+    const jsPDF = await caricaJsPDF();
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();   // 595.28
+    const pageH = pdf.internal.pageSize.getHeight();  // 841.89
+    const margin = 24;
+    const titleH = 28;
+    const contentW = pageW - 2 * margin;
+    const contentH = pageH - 2 * margin - titleH;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    // Scala per far entrare l'altezza canvas nell'area contenuto pagina
+    let scale = contentH / ch;
+    if (scale > 1) scale = 1; // non ingrandire oltre il nativo
+    const canvasWonPage = cw * scale;
+    const canvasHonPage = ch * scale;
+    const pages = Math.max(1, Math.ceil(canvasWonPage / contentW));
+
+    // Titolo basato sul range filtro
+    const f = filtri.gantt;
+    const range = calcolaRangeGantt(f);
+    const da = f.dataDa || range?.min || '';
+    const aISO = f.dataA || range?.max || '';
+    const fmt = iso => iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : '';
+    const titoloBase = (da && aISO) ? `Gantt — ${fmt(da)} → ${fmt(aISO)}` : 'Gantt';
+
+    for (let p = 0; p < pages; p++) {
+      if (p > 0) pdf.addPage();
+      pdf.setFontSize(13);
+      pdf.setTextColor(15, 23, 42);
+      const tit = pages > 1 ? `${titoloBase} — pagina ${p + 1}/${pages}` : titoloBase;
+      pdf.text(tit, margin, margin + 14);
+
+      const sliceXonPage = p * contentW;
+      const sliceWonPage = Math.min(contentW, canvasWonPage - sliceXonPage);
+      const sliceXpx = sliceXonPage / scale;
+      const sliceWpx = sliceWonPage / scale;
+
+      const slice = document.createElement('canvas');
+      slice.width = Math.ceil(sliceWpx);
+      slice.height = ch;
+      const ctx = slice.getContext('2d');
+      ctx.drawImage(canvas, sliceXpx, 0, sliceWpx, ch, 0, 0, sliceWpx, ch);
+      pdf.addImage(
+        slice.toDataURL('image/png'),
+        'PNG',
+        margin,
+        margin + titleH,
+        sliceWonPage,
+        canvasHonPage
+      );
+    }
+    pdf.save(`gantt-${dataISOoggi()}.pdf`);
+  } catch (err) {
+    alert('Errore export PDF: ' + (err?.message || err));
   }
 }
 
@@ -5417,7 +5523,7 @@ function inizializza() {
       btn.addEventListener('click', async () => {
         dd.classList.add('hidden');
         const fmt = btn.dataset.exportFormat;
-        if (fmt === 'pdf')      stampaVista(vista);
+        if (fmt === 'pdf')      await esportaGanttPDF();
         else if (fmt === 'png') await esportaGanttPNG();
         else if (fmt === 'csv') esportaGanttCSV();
       });
