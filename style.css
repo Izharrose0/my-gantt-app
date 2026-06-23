@@ -738,6 +738,27 @@ input:focus, select:focus {
   overflow: hidden;
 }
 .gantt-side-row:hover { background: #f8fafc; }
+.gantt-side-row.gantt-group-header {
+  background: rgba(37, 99, 235, 0.08);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1e3a8a;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.25);
+  cursor: pointer;
+}
+.gantt-side-row.gantt-group-header:hover { background: rgba(37, 99, 235, 0.14); }
+.gantt-side-row.gantt-group-header .gantt-chevron { color: #1e3a8a; }
+.gantt-side-row.gantt-group-header .gantt-group-label { flex: 1; }
+.gantt-side-row.gantt-group-header .gantt-group-count {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.gantt-row.gantt-row-group { background: rgba(37, 99, 235, 0.05); }
 .gantt-task-name {
   overflow: hidden;
   text-overflow: ellipsis;

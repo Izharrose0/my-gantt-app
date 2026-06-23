@@ -909,8 +909,21 @@ function calcolaDayWAdattivo(containerId, sideWidthApprox, giorniLen) {
 
 // Set di epiche collassate nel Gantt (transiente, non persistito)
 let epicheCollassate = new Set();
+// Set di progetti Jira collassati nel Gantt (header sezione)
+let progettiCollassati = new Set();
 // Flag che indica se abbiamo già fatto la collapse iniziale di tutte le epiche
 let collassoInizialeFatto = false;
+
+// Chiave di raggruppamento progetto per un task (epica)
+// Ordine: t.jiraProject -> prefisso jiraKey -> "__manual__"
+function chiaveProgetto(t) {
+  if (t.jiraProject) return t.jiraProject;
+  if (t.jiraKey) return String(t.jiraKey).split('-')[0];
+  return '__manual__';
+}
+function etichettaProgetto(key) {
+  return key === '__manual__' ? 'Manuali' : key;
+}
 
 // All'avvio chiudi tutte le epiche esistenti
 function collassaTutteEpicheInizialmente() {
@@ -2143,22 +2156,37 @@ function eFoglia(taskId) {
 // isEpica = tipo 'epica' (da Jira o manuale). isParent = ha figli (anche Story con sub-task).
 // Il chevron di collapse appare su isParent (non solo isEpica), così le Story
 // con sub-task sono espandibili/collassabili come le epiche.
-function ordineGerarchicoTask(rispettaCollasso = false, ammessi = null) {
+function ordineGerarchicoTask(rispettaCollasso = false, ammessi = null, raggruppaPerProgetto = false) {
   const out = [];
   function walk(parentId, livello) {
-    stato.task
+    let fratelli = stato.task
       .filter(t => (t.parentId || null) === parentId)
       .filter(t => !ammessi || ammessi.has(t.id))
       .slice()
-      .sort((a, b) => (Number(a.ordine) || 0) - (Number(b.ordine) || 0))
-      .forEach(t => {
-        const isEpica = eEpica(t.id);
-        const isParent = isEpica || haFigli(t.id);
-        const collassata = isParent && epicheCollassate.has(t.id);
-        out.push({ task: t, livello, isEpica, isParent, collassata });
-        if (rispettaCollasso && collassata) return;
-        walk(t.id, livello + 1);
+      .sort((a, b) => (Number(a.ordine) || 0) - (Number(b.ordine) || 0));
+    // Solo a livello 0: raggruppa top-level per progetto (preserva ordine interno)
+    if (raggruppaPerProgetto && parentId === null) {
+      const ordineProgetti = new Map();
+      let next = 0;
+      fratelli.forEach(t => {
+        const k = chiaveProgetto(t);
+        if (!ordineProgetti.has(k)) ordineProgetti.set(k, next++);
       });
+      fratelli.sort((a, b) => {
+        const pa = ordineProgetti.get(chiaveProgetto(a));
+        const pb = ordineProgetti.get(chiaveProgetto(b));
+        if (pa !== pb) return pa - pb;
+        return (Number(a.ordine) || 0) - (Number(b.ordine) || 0);
+      });
+    }
+    fratelli.forEach(t => {
+      const isEpica = eEpica(t.id);
+      const isParent = isEpica || haFigli(t.id);
+      const collassata = isParent && epicheCollassate.has(t.id);
+      out.push({ task: t, livello, isEpica, isParent, collassata });
+      if (rispettaCollasso && collassata) return;
+      walk(t.id, livello + 1);
+    });
   }
   walk(null, 0);
   return out;
@@ -3350,10 +3378,48 @@ function renderGantt() {
   }
 
   // --- Costruisci elenco ordinato rispettando collasso epiche e filtri ---
-  const taskOrdinati = ordineGerarchicoTask(true, ammessi);
+  // raggruppaPerProgetto=true: top-level pre-ordinato per progetto Jira
+  const taskOrdinati = ordineGerarchicoTask(true, ammessi, true);
+
+  // Inserisci righe header per ogni gruppo progetto + nascondi figli se collassato
+  const righeMisto = [];
+  let progettoCorrente = undefined;
+  let saltaFinoNuovoTop = false;
+  taskOrdinati.forEach(item => {
+    if (item.livello === 0) {
+      const k = chiaveProgetto(item.task);
+      if (k !== progettoCorrente) {
+        progettoCorrente = k;
+        // Conta epiche top-level del progetto per il label
+        const nEpiche = taskOrdinati.filter(x => x.livello === 0 && chiaveProgetto(x.task) === k).length;
+        const collassato = progettiCollassati.has(k);
+        righeMisto.push({
+          _isGroupHeader: true,
+          groupKey: k,
+          groupLabel: etichettaProgetto(k),
+          count: nEpiche,
+          collassato
+        });
+        saltaFinoNuovoTop = collassato;
+      }
+    }
+    if (saltaFinoNuovoTop) return;
+    righeMisto.push(item);
+  });
 
   // --- Righe task (sia colonna laterale che barre nella timeline) ---
-  const sideRows = taskOrdinati.map(({ task: t, livello, isEpica, isParent, collassata }, i) => {
+  const sideRows = righeMisto.map((item, i) => {
+    if (item._isGroupHeader) {
+      const chev = item.collassato ? '▸' : '▾';
+      return `
+        <div class="gantt-side-row gantt-group-header" data-group="${escapeHtml(item.groupKey)}"
+             title="Click per espandere/collassare il progetto">
+          <span class="gantt-chevron" data-toggle-group="${escapeHtml(item.groupKey)}">${chev}</span>
+          <span class="gantt-group-label">${escapeHtml(item.groupLabel)}</span>
+          <span class="gantt-group-count">${item.count} epic${item.count === 1 ? 'a' : 'he'}</span>
+        </div>`;
+    }
+    const { task: t, livello, isEpica, isParent, collassata } = item;
     const statoVis = isEpica ? aggregaEpica(t).stato : t.stato;
     const infoStato = STATI_TASK[statoVis] || STATI_TASK.todo;
     const indent = livello * 14;
@@ -3375,9 +3441,14 @@ function renderGantt() {
       </div>`;
   }).join('');
 
-  const bodyRows = taskOrdinati.map(({ task: t, isEpica, collassata }, i) => {
-    const isMilestone = t.tipo === 'milestone';
+  const bodyRows = righeMisto.map((item, i) => {
     const altCls = i % 2 === 1 ? ' row-alt' : '';
+    // Header progetto: riga vuota (barra opzionale aggregata gestita altrove)
+    if (item._isGroupHeader) {
+      return `<div class="gantt-row gantt-row-group${altCls}" data-group="${escapeHtml(item.groupKey)}"></div>`;
+    }
+    const { task: t, isEpica, collassata } = item;
+    const isMilestone = t.tipo === 'milestone';
     const agg = isEpica ? aggregaEpica(t) : null;
     const inizio = isEpica ? agg.inizio : t.inizio;
     const fine = isEpica ? agg.fine : t.fine;
@@ -3490,12 +3561,13 @@ function renderGantt() {
   }).join('');
 
   // SVG overlay per frecce dipendenze (calcoliamo dopo aver montato il DOM)
-  const bodyH = taskOrdinati.length * 40;
+  const bodyH = righeMisto.length * 40;
   const archiSVG = `<svg class="gantt-arcs" width="${totaleW}" height="${bodyH}"></svg>`;
+  const nTaskVisibili = righeMisto.filter(r => !r._isGroupHeader).length;
 
   container.innerHTML = `
     <div class="gantt-side">
-      <div class="gantt-side-header">Task (${taskOrdinati.length})</div>
+      <div class="gantt-side-header">Task (${nTaskVisibili})</div>
       <div class="gantt-side-body">${sideRows}</div>
     </div>
     <div class="gantt-main">
@@ -3516,9 +3588,16 @@ function renderGantt() {
   `;
 
   // Click sulle righe della colonna laterale → apre il modal,
-  // tranne click sul chevron che fa toggle collasso
+  // tranne click sul chevron che fa toggle collasso (task o gruppo progetto)
   container.querySelectorAll('.gantt-side-row').forEach(el => {
     el.addEventListener('click', ev => {
+      const chevGroup = ev.target.closest('.gantt-chevron[data-toggle-group]');
+      if (chevGroup || el.classList.contains('gantt-group-header')) {
+        ev.stopPropagation();
+        const k = (chevGroup && chevGroup.dataset.toggleGroup) || el.dataset.group;
+        if (k) toggleCollassoProgetto(k);
+        return;
+      }
       const chev = ev.target.closest('.gantt-chevron[data-toggle]');
       if (chev) {
         ev.stopPropagation();
@@ -3814,6 +3893,12 @@ function toggleCollassoEpica(epicaId) {
   else epicheCollassate.add(epicaId);
   renderGantt();
   renderTask();
+}
+
+function toggleCollassoProgetto(key) {
+  if (progettiCollassati.has(key)) progettiCollassati.delete(key);
+  else progettiCollassati.add(key);
+  renderGantt();
 }
 
 // ===== WEEK STRIP (sopra il Gantt) =====
