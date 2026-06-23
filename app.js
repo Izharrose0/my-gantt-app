@@ -936,10 +936,20 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (transienti, indipendenti per vista)
 let filtri = {
-  gantt:      { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
-  workload:   { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
-  eisenhower: { persone: [], stati: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
+  gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
+  workload:   { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
+  eisenhower: { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
 };
+
+// Garantisce array epiche/progetti (migrazione da singoli) per ogni vista
+function migrazioneFiltri() {
+  ['gantt','workload','eisenhower'].forEach(v => {
+    const f = filtri[v];
+    if (!Array.isArray(f.epiche))   f.epiche   = f.epica   ? [f.epica]   : [];
+    if (!Array.isArray(f.progetti)) f.progetti = f.progetto ? [f.progetto] : [];
+  });
+}
+migrazioneFiltri();
 
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
 let eisenModo = 'epiche';
@@ -1264,8 +1274,8 @@ function contaFiltriAttivi(view) {
   let n = 0;
   if (f.persone?.length) n++;
   if (f.stati?.length)   n++;
-  if (f.epica)            n++;
-  if (f.progetto)         n++;
+  if ((f.epiche?.length) || f.epica)       n++;
+  if ((f.progetti?.length) || f.progetto)  n++;
   if (f.team)             n++;
   if (f.dataDa || f.dataA) n++;
   return n;
@@ -1369,12 +1379,17 @@ function apriBottomSheetFiltri() {
     aggiornaBadgeFiltri();
   });
   body.querySelector('#bs-applica').addEventListener('click', () => {
+    const epicaSel = body.querySelector('.bs-filter-epica').value;
     filtri[view] = {
-      persone: Array.from(body.querySelector('.bs-filter-persone').selectedOptions).map(o => o.value),
-      stati:   Array.from(body.querySelector('.bs-filter-stato').selectedOptions).map(o => o.value),
-      epica:   body.querySelector('.bs-filter-epica').value,
-      dataDa:  body.querySelector('.bs-filter-data-da').value,
-      dataA:   body.querySelector('.bs-filter-data-a').value
+      persone:  Array.from(body.querySelector('.bs-filter-persone').selectedOptions).map(o => o.value),
+      stati:    Array.from(body.querySelector('.bs-filter-stato').selectedOptions).map(o => o.value),
+      epiche:   epicaSel ? [epicaSel] : [],
+      progetti: filtri[view].progetti || [],
+      epica:    '',
+      progetto: '',
+      team:     filtri[view].team || '',
+      dataDa:   body.querySelector('.bs-filter-data-da').value,
+      dataA:    body.querySelector('.bs-filter-data-a').value
     };
     popolaFiltri();
     if (view === 'gantt')    renderGantt();
@@ -1401,12 +1416,13 @@ function popolaFiltri() {
         .join('');
     }
 
-    // Epiche
+    // Epiche (multi-select)
     const selE = bar.querySelector('.filter-epica');
     if (selE) {
       const epiche = stato.task.filter(t => t.tipo === 'epica');
-      selE.innerHTML = `<option value="">— Tutte —</option>` + epiche
-        .map(e => `<option value="${e.id}" ${f.epica === e.id ? 'selected' : ''}>${escapeHtml(e.nome)}</option>`)
+      const sel = new Set(Array.isArray(f.epiche) ? f.epiche : (f.epica ? [f.epica] : []));
+      selE.innerHTML = epiche
+        .map(e => `<option value="${e.id}" ${sel.has(e.id) ? 'selected' : ''}>${escapeHtml(e.nome)}</option>`)
         .join('');
     }
 
@@ -1419,12 +1435,13 @@ function popolaFiltri() {
         .join('');
     }
 
-    // Progetti Jira
+    // Progetti Jira (multi-select)
     const selProj = bar.querySelector('.filter-progetto');
     if (selProj) {
       const progetti = progettiPresenti();
-      selProj.innerHTML = `<option value="">— Tutti —</option>` + progetti
-        .map(p => `<option value="${escapeHtml(p)}" ${f.progetto === p ? 'selected' : ''}>${escapeHtml(p)}</option>`)
+      const sel = new Set(Array.isArray(f.progetti) ? f.progetti : (f.progetto ? [f.progetto] : []));
+      selProj.innerHTML = progetti
+        .map(p => `<option value="${escapeHtml(p)}" ${sel.has(p) ? 'selected' : ''}>${escapeHtml(p)}</option>`)
         .join('');
     }
 
@@ -1456,10 +1473,11 @@ function taskNascosto(t) {
 
 function passaFiltri(t, f) {
   if (taskNascosto(t)) return false;
-  // Filtro progetto Jira: applicato a tutti i tipi (epica/task/milestone).
-  // I task manuali (no jiraProject) passano solo se non c'e' filtro.
-  if (f.progetto) {
-    if ((t.jiraProject || '') !== f.progetto) return false;
+  // Filtro progetto Jira (multi-select): applicato a tutti i tipi.
+  // Fallback su f.progetto (legacy singolo) se f.progetti non e' array.
+  const progettiSel = Array.isArray(f.progetti) ? f.progetti : (f.progetto ? [f.progetto] : []);
+  if (progettiSel.length) {
+    if (!progettiSel.includes(t.jiraProject || '')) return false;
   }
   if (f.stati.length && !f.stati.includes(t.stato) && t.tipo !== 'epica') return false;
   if (f.persone.length) {
@@ -1479,14 +1497,17 @@ function passaFiltri(t, f) {
       if (!(t.assegnazioni || []).some(a => f.persone.includes(a.personaId))) return false;
     }
   }
-  if (f.epica) {
-    // Il task deve essere figlio diretto/indiretto di quella epica (o esserlo)
-    if (t.id !== f.epica && !eAntenato(f.epica, t.id)) return false;
+  // Filtro epiche (multi-select): il task deve appartenere ad almeno una.
+  // Fallback su f.epica (legacy singolo) se f.epiche non e' array.
+  const epicheSel = Array.isArray(f.epiche) ? f.epiche : (f.epica ? [f.epica] : []);
+  if (epicheSel.length) {
+    const ok = epicheSel.some(eid => t.id === eid || eAntenato(eid, t.id));
+    if (!ok) return false;
   }
   if (f.dataDa || f.dataA) {
     // Usa date ereditate dal parent per sub-task senza date proprie
     const { inizio: ti, fine: tf } = dateEffettive(t);
-    if (!ti || !tf) return f.epica ? true : false;
+    if (!ti || !tf) return epicheSel.length ? true : false;
     if (f.dataA && ti > f.dataA) return false;
     if (f.dataDa && tf < f.dataDa) return false;
   }
@@ -5260,7 +5281,8 @@ function inizializza() {
       rerenderVista(vista);
     });
     bar.querySelector('.filter-epica')?.addEventListener('change', e => {
-      filtri[vista].epica = e.target.value;
+      filtri[vista].epiche = Array.from(e.target.selectedOptions).map(o => o.value);
+      filtri[vista].epica  = ''; // legacy, svuota
       rerenderVista(vista);
     });
     bar.querySelector('.filter-team')?.addEventListener('change', e => {
@@ -5268,7 +5290,8 @@ function inizializza() {
       rerenderVista(vista);
     });
     bar.querySelector('.filter-progetto')?.addEventListener('change', e => {
-      filtri[vista].progetto = e.target.value;
+      filtri[vista].progetti = Array.from(e.target.selectedOptions).map(o => o.value);
+      filtri[vista].progetto = ''; // legacy, svuota
       rerenderVista(vista);
     });
     bar.querySelector('.filter-data-da')?.addEventListener('change', e => {
@@ -5284,6 +5307,8 @@ function inizializza() {
       filtri[vista].stati    = [];
       filtri[vista].epica    = '';
       filtri[vista].progetto = '';
+      filtri[vista].epiche   = [];
+      filtri[vista].progetti = [];
       filtri[vista].team     = '';
       const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
