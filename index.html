@@ -219,7 +219,14 @@
             Filtri
             <span class="filtri-badge hidden">0</span>
           </button>
-          <button class="btn btn-secondary btn-sm" id="btn-stampa-gantt">PDF</button>
+          <div class="export-menu" data-export="gantt">
+            <button type="button" class="btn btn-secondary btn-sm export-trigger">Export ▾</button>
+            <div class="export-dropdown hidden">
+              <button type="button" class="export-opt" data-export-format="pdf">PDF (stampa)</button>
+              <button type="button" class="export-opt" data-export-format="png">PNG (immagine)</button>
+              <button type="button" class="export-opt" data-export-format="csv">CSV (dati)</button>
+            </div>
+          </div>
         </div>
 
         <div class="filter-bar collapsed" data-view-filter="gantt">

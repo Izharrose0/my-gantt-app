@@ -1237,6 +1237,87 @@ function stampaReport() {
   }, 100);
 }
 
+// ===== EXPORT GANTT: PNG (html2canvas via CDN lazy-load) =====
+async function caricaHtml2Canvas() {
+  if (window.html2canvas) return window.html2canvas;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    s.onload = res;
+    s.onerror = () => rej(new Error('Impossibile caricare html2canvas'));
+    document.head.appendChild(s);
+  });
+  if (!window.html2canvas) throw new Error('html2canvas non disponibile');
+  return window.html2canvas;
+}
+
+async function esportaGanttPNG() {
+  const cont = document.getElementById('gantt-container');
+  if (!cont) return;
+  try {
+    const h2c = await caricaHtml2Canvas();
+    // Snapshot dell'intero container (side column + timeline)
+    const canvas = await h2c(cont, {
+      backgroundColor: getComputedStyle(document.body).backgroundColor || '#ffffff',
+      scale: window.devicePixelRatio > 1 ? 2 : 1.5,
+      useCORS: true,
+      windowWidth: cont.scrollWidth,
+      windowHeight: cont.scrollHeight,
+      width: cont.scrollWidth,
+      height: cont.scrollHeight
+    });
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gantt-${dataISOoggi()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  } catch (err) {
+    alert('Errore export PNG: ' + (err?.message || err));
+  }
+}
+
+// ===== EXPORT GANTT: CSV dei task filtrati =====
+function esportaGanttCSV() {
+  const ammessi = taskAmmessi(filtri.gantt);
+  const items = ordineGerarchicoTask(false, ammessi, true);
+  const rows = [['Progetto','Tipo','Livello','ID Jira','Nome','Stato','Inizio','Fine','Ore stimate','Assegnati']];
+  items.forEach(({ task: t, livello }) => {
+    const progetto = etichettaProgetto(chiaveProgetto(t));
+    const tipo = t.tipo || '';
+    const jiraKey = t.jiraKey || '';
+    const nome = t.nome || '';
+    const stato_ = t.stato || '';
+    const { inizio, fine } = dateEffettive(t);
+    const ore = stimaOreEffettiva(t);
+    const ass = (t.assegnazioni || [])
+      .map(a => { const p = trovaPersona(a.personaId); return p ? `${p.nome} (${a.effort}%)` : ''; })
+      .filter(Boolean)
+      .join(' · ');
+    rows.push([progetto, tipo, livello, jiraKey, nome, stato_, inizio || '', fine || '', ore, ass]);
+  });
+  // CSV: separa con ; (Excel italiano), quote i campi
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c == null ? '' : c).replace(/"/g, '""');
+    return `"${s}"`;
+  }).join(';')).join('\r\n');
+  // BOM per Excel
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gantt-${dataISOoggi()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function stampaVista(vista) {
   // Assicura che la vista sia attiva e renderizzata col filtro corrente
   attivaTab(vista);
@@ -5318,9 +5399,34 @@ function inizializza() {
     });
   });
 
-  // --- Export PDF (sfrutta il print dialog del browser, "Salva come PDF") ---
-  document.getElementById('btn-stampa-gantt').addEventListener('click', () => stampaVista('gantt'));
+  // --- Export Workload (solo PDF) ---
   document.getElementById('btn-stampa-workload').addEventListener('click', () => stampaVista('workload'));
+
+  // --- Export Gantt: dropdown con PDF / PNG / CSV ---
+  document.querySelectorAll('.export-menu').forEach(menu => {
+    const vista = menu.dataset.export;
+    const trigger = menu.querySelector('.export-trigger');
+    const dd = menu.querySelector('.export-dropdown');
+    trigger.addEventListener('click', e => {
+      e.stopPropagation();
+      // Chiudi altri dropdown aperti
+      document.querySelectorAll('.export-dropdown').forEach(o => { if (o !== dd) o.classList.add('hidden'); });
+      dd.classList.toggle('hidden');
+    });
+    menu.querySelectorAll('.export-opt').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        dd.classList.add('hidden');
+        const fmt = btn.dataset.exportFormat;
+        if (fmt === 'pdf')      stampaVista(vista);
+        else if (fmt === 'png') await esportaGanttPNG();
+        else if (fmt === 'csv') esportaGanttCSV();
+      });
+    });
+  });
+  // Click fuori chiude i dropdown
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.export-dropdown').forEach(o => o.classList.add('hidden'));
+  });
 
   // --- Calendario: form festività ---
   document.getElementById('form-festivita').addEventListener('submit', e => {
