@@ -1421,9 +1421,10 @@ async function esportaGanttPNG() {
   }
 }
 
-// PDF multi-pagina A4 portrait: ogni pagina contiene l'intera altezza del
-// Gantt (tutti i task) + una porzione di timeline. Le pagine si leggono
-// scorrendo verso il basso, ognuna copre un sottoinsieme di date.
+// PDF multi-pagina A4 portrait: ogni pagina contiene la side column (Task)
+// ripetuta a sinistra + una porzione di timeline a destra. Pagine consecutive
+// coprono date successive, ma il riferimento delle righe (nome task) resta
+// sempre visibile.
 async function esportaGanttPDF() {
   try {
     const canvas = await catturaGanttCanvas();
@@ -1433,52 +1434,81 @@ async function esportaGanttPDF() {
     const pageW = pdf.internal.pageSize.getWidth();   // 595.28
     const pageH = pdf.internal.pageSize.getHeight();  // 841.89
     const margin = 24;
-    const titleH = 28;
+    const titleH = 22;
     const contentW = pageW - 2 * margin;
     const contentH = pageH - 2 * margin - titleH;
 
     const cw = canvas.width;
     const ch = canvas.height;
-    // Scala per far entrare l'altezza canvas nell'area contenuto pagina
-    let scale = contentH / ch;
-    if (scale > 1) scale = 1; // non ingrandire oltre il nativo
-    const canvasWonPage = cw * scale;
-    const canvasHonPage = ch * scale;
-    const pages = Math.max(1, Math.ceil(canvasWonPage / contentW));
+    // Identifica la larghezza della side column nel canvas catturato
+    const sideEl = document.querySelector('.gantt-side');
+    const cont   = document.getElementById('gantt-container');
+    const sideRatio = (sideEl && cont) ? sideEl.offsetWidth / cont.scrollWidth : 0.18;
+    const sideWpx = Math.round(cw * sideRatio);
+    const timelineCanvasWpx = cw - sideWpx;
 
-    // Titolo basato sul range filtro
+    // Scala: massimizza l'utilizzo dell'altezza pagina, ma assicura che
+    // la side column non superi il 35% della larghezza pagina (altrimenti
+    // la timeline resterebbe troppo schiacciata)
+    let scale = contentH / ch;
+    const maxSideWonPage = contentW * 0.35;
+    const maxScalePerSide = maxSideWonPage / sideWpx;
+    if (scale > maxScalePerSide) scale = maxScalePerSide;
+    if (scale > 4) scale = 4; // cap di sicurezza
+    if (scale < 0.2) scale = 0.2;
+
+    const sideWonPage = sideWpx * scale;
+    const canvasHonPage = ch * scale;
+    const timelineWonPagePt = Math.max(40, contentW - sideWonPage);
+    const timelineCanvasWPerPagePx = timelineWonPagePt / scale;
+    const pages = Math.max(1, Math.ceil(timelineCanvasWpx / timelineCanvasWPerPagePx));
+
+    // Titolo: solo ASCII (helvetica embedded non supporta unicode arrow/em-dash)
     const f = filtri.gantt;
     const range = calcolaRangeGantt(f);
     const da = f.dataDa || range?.min || '';
     const aISO = f.dataA || range?.max || '';
     const fmt = iso => iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : '';
-    const titoloBase = (da && aISO) ? `Gantt — ${fmt(da)} → ${fmt(aISO)}` : 'Gantt';
+    const titoloBase = (da && aISO) ? `Gantt  ${fmt(da)}  -  ${fmt(aISO)}` : 'Gantt';
+
+    // Pre-renderizza la side column una volta sola (riutilizzata su ogni pagina)
+    const sideCanvas = document.createElement('canvas');
+    sideCanvas.width = sideWpx;
+    sideCanvas.height = ch;
+    sideCanvas.getContext('2d').drawImage(canvas, 0, 0, sideWpx, ch, 0, 0, sideWpx, ch);
+    const sideDataUrl = sideCanvas.toDataURL('image/png');
 
     for (let p = 0; p < pages; p++) {
       if (p > 0) pdf.addPage();
-      pdf.setFontSize(13);
+      pdf.setFontSize(12);
       pdf.setTextColor(15, 23, 42);
-      const tit = pages > 1 ? `${titoloBase} — pagina ${p + 1}/${pages}` : titoloBase;
+      const tit = pages > 1 ? `${titoloBase}   pag ${p + 1} / ${pages}` : titoloBase;
       pdf.text(tit, margin, margin + 14);
 
-      const sliceXonPage = p * contentW;
-      const sliceWonPage = Math.min(contentW, canvasWonPage - sliceXonPage);
-      const sliceXpx = sliceXonPage / scale;
-      const sliceWpx = sliceWonPage / scale;
+      // Side column su ogni pagina (riferimento righe sempre visibile)
+      pdf.addImage(sideDataUrl, 'PNG', margin, margin + titleH, sideWonPage, canvasHonPage);
 
-      const slice = document.createElement('canvas');
-      slice.width = Math.ceil(sliceWpx);
-      slice.height = ch;
-      const ctx = slice.getContext('2d');
-      ctx.drawImage(canvas, sliceXpx, 0, sliceWpx, ch, 0, 0, sliceWpx, ch);
-      pdf.addImage(
-        slice.toDataURL('image/png'),
-        'PNG',
-        margin,
-        margin + titleH,
-        sliceWonPage,
-        canvasHonPage
-      );
+      // Slice di timeline
+      const tStartPx = p * timelineCanvasWPerPagePx;
+      const tWpx = Math.min(timelineCanvasWPerPagePx, timelineCanvasWpx - tStartPx);
+      if (tWpx > 0) {
+        const sliceC = document.createElement('canvas');
+        sliceC.width = Math.ceil(tWpx);
+        sliceC.height = ch;
+        sliceC.getContext('2d').drawImage(
+          canvas,
+          sideWpx + tStartPx, 0, tWpx, ch,
+          0, 0, tWpx, ch
+        );
+        pdf.addImage(
+          sliceC.toDataURL('image/png'),
+          'PNG',
+          margin + sideWonPage,
+          margin + titleH,
+          tWpx * scale,
+          canvasHonPage
+        );
+      }
     }
     pdf.save(`gantt-${dataISOoggi()}.pdf`);
   } catch (err) {
