@@ -1032,12 +1032,32 @@ function collassaTutteEpicheInizialmente() {
   collassoInizialeFatto = true;
 }
 
-// Filtri (transienti, indipendenti per vista)
+// Filtri (per vista). Persistiti in localStorage per sopravvivere ai reload.
 let filtri = {
   gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
   workload:   { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
   eisenhower: { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
 };
+
+const FILTRI_STORAGE_KEY = 'mygantt:filtri:v1';
+
+function caricaFiltriLocale() {
+  try {
+    const raw = localStorage.getItem(FILTRI_STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object') return;
+    ['gantt','workload','eisenhower'].forEach(v => {
+      if (saved[v] && typeof saved[v] === 'object') {
+        Object.assign(filtri[v], saved[v]);
+      }
+    });
+  } catch {}
+}
+
+function salvaFiltriLocale() {
+  try { localStorage.setItem(FILTRI_STORAGE_KEY, JSON.stringify(filtri)); } catch {}
+}
 
 // Garantisce array epiche/progetti (migrazione da singoli) per ogni vista
 function migrazioneFiltri() {
@@ -1047,6 +1067,7 @@ function migrazioneFiltri() {
     if (!Array.isArray(f.progetti)) f.progetti = f.progetto ? [f.progetto] : [];
   });
 }
+caricaFiltriLocale();
 migrazioneFiltri();
 
 // Modalità della matrice di Eisenhower: 'epiche' (default) | 'task' | 'tutti'
@@ -1104,6 +1125,7 @@ function rangeFiltroDefaultPerVista(vista) {
 }
 
 function rerenderVista(vista) {
+  salvaFiltriLocale();
   if (vista === 'gantt') renderGantt();
   else if (vista === 'workload') renderWorkload();
   else if (vista === 'eisenhower') renderEisenhower();
@@ -1382,13 +1404,17 @@ async function catturaGanttCanvas() {
   await new Promise(r => requestAnimationFrame(r));
   const fullW = cont.scrollWidth;
   const fullH = cont.scrollHeight;
-  // Altezza reale del contenuto = altezza side column (header + righe task).
-  // Evita di catturare lo sfondo nero della timeline che si estende oltre.
-  const sideEl = cont.querySelector('.gantt-side');
+  // Altezza reale del contenuto = bottom dell'ultima riga della side column.
+  // Necessario perche' la timeline ha sfondo scuro che si estende oltre le
+  // righe quando il container ha min-height impostato.
   let captureH = fullH;
-  if (sideEl) {
-    const sideH = sideEl.scrollHeight || sideEl.offsetHeight;
-    if (sideH > 0 && sideH < captureH) captureH = sideH;
+  const sideRows = cont.querySelectorAll('.gantt-side .gantt-side-row');
+  if (sideRows.length > 0) {
+    const lastRow = sideRows[sideRows.length - 1];
+    const contRect = cont.getBoundingClientRect();
+    const lastRect = lastRow.getBoundingClientRect();
+    const bottom = lastRect.bottom - contRect.top;
+    if (bottom > 0 && bottom < captureH) captureH = Math.ceil(bottom);
   }
   const bg = getComputedStyle(document.body).backgroundColor || '#0b1220';
   try {
