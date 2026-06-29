@@ -1034,7 +1034,7 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (per vista). Persistiti in localStorage per sopravvivere ai reload.
 let filtri = {
-  gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
+  gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '', autoRange: false },
   workload:   { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
   eisenhower: { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
 };
@@ -1398,15 +1398,15 @@ async function catturaGanttCanvas() {
   const oldH = cont.style.height;
   cont.style.overflow = 'visible';
   cont.style.maxHeight = 'none';
-  cont.style.minHeight = 'auto';
+  cont.style.minHeight = '0';
   cont.style.height = 'auto';
   await new Promise(r => requestAnimationFrame(r));
   await new Promise(r => requestAnimationFrame(r));
   const fullW = cont.scrollWidth;
   const fullH = cont.scrollHeight;
   // Altezza reale del contenuto = bottom dell'ultima riga della side column.
-  // Necessario perche' la timeline ha sfondo scuro che si estende oltre le
-  // righe quando il container ha min-height impostato.
+  // Senza questo crop la timeline ha sfondo scuro che si estende fino al
+  // min-height del container, generando il "blocco nero" sotto le barre.
   let captureH = fullH;
   const sideRows = cont.querySelectorAll('.gantt-side .gantt-side-row');
   if (sideRows.length > 0) {
@@ -1414,8 +1414,13 @@ async function catturaGanttCanvas() {
     const contRect = cont.getBoundingClientRect();
     const lastRect = lastRow.getBoundingClientRect();
     const bottom = lastRect.bottom - contRect.top;
-    if (bottom > 0 && bottom < captureH) captureH = Math.ceil(bottom);
+    if (bottom > 0) captureH = Math.ceil(bottom);
   }
+  // Forza height esplicito: html2canvas legge il bounding rect del nodo,
+  // non rispetta sempre l'opzione `height` quando il DOM live e' piu' alto.
+  cont.style.height = captureH + 'px';
+  await new Promise(r => requestAnimationFrame(r));
+
   const bg = getComputedStyle(document.body).backgroundColor || '#0b1220';
   try {
     return await h2c(cont, {
@@ -1493,10 +1498,12 @@ async function esportaGanttPDF() {
 
     // Scala single-page: fit-to-fit (rispetta aspect ratio del canvas)
     const singleScale = Math.min(contentW / cw, contentH / ch);
-    // Soglia leggibilita': se la riga finale ha < ~10pt non e' leggibile
-    const numRowsApprox = Math.max(1, sideEl ? sideEl.querySelectorAll('.gantt-side-row').length : 8);
-    const rowHptSingle = (ch / numRowsApprox) * singleScale;
-    const singlePage = rowHptSingle >= 10 && singleScale > 0;
+    const wOnPagePtSingle = cw * singleScale;
+    // Default = single-page. La timeline su pagina deve essere larga almeno
+    // 200pt (~7cm) per essere "leggibile". Con poche righe vogliamo SEMPRE
+    // una sola pagina: il vincolo precedente sull'altezza riga era troppo
+    // stretto e mandava in multi-page Gantt con 6 task / 90 giorni.
+    const singlePage = singleScale > 0 && wOnPagePtSingle >= 200;
 
     pdf.setFontSize(12);
     pdf.setTextColor(15, 23, 42);
@@ -1514,7 +1521,10 @@ async function esportaGanttPDF() {
       const maxSideWonPage = contentW * 0.28;
       const maxScalePerSide = maxSideWonPage / sideWpx;
       if (scale > maxScalePerSide) scale = maxScalePerSide;
-      if (scale > 4) scale = 4;
+      // Cap: con poche righe lo scale puo' diventare enorme e gonfiare la
+      // timeline su 6+ pagine. Limitiamo a 1.5x: oltre, il Gantt e' gia'
+      // leggibile e non vale la pena esplodere la paginazione.
+      if (scale > 1.5) scale = 1.5;
       if (scale < 0.15) scale = 0.15;
 
       const sideWonPage = sideWpx * scale;
@@ -1563,11 +1573,57 @@ async function esportaGanttPDF() {
   }
 }
 
-// ===== EXPORT GANTT: CSV dei task filtrati =====
+// ===== EXPORT GANTT: CSV con riepilogo Progetti + Epiche + dettaglio Task =====
 function esportaGanttCSV() {
-  const ammessi = taskAmmessi(filtri.gantt);
+  const f = filtri.gantt;
+  const ammessi = taskAmmessi(f);
+  const an = analyticsEpiche(f);
+
+  const rows = [];
+  const fmt0 = n => Number.isFinite(n) ? Math.round(n).toString() : '';
+  const fmtH = n => Number.isFinite(n) ? Math.round(n * 10) / 10 : '';
+
+  // === SEZIONE A: Riepilogo Progetti ===
+  rows.push(['# Riepilogo Progetti']);
+  rows.push(['Progetto','Epiche','Inizio','Fine','Ore stimate','Ore allocate','Costo €','% completo']);
+  an.perProgetto.forEach(p => {
+    rows.push([
+      p.nome, p.nEpiche, p.inizioMin || '', p.fineMax || '',
+      fmtH(p.stimaOre), fmtH(p.oreAllocate), fmt0(p.costoTotale), p.completamento
+    ]);
+  });
+  if (an.perProgetto.length) {
+    rows.push([
+      'TOTALE', an.totali.nEpiche, '', '',
+      fmtH(an.totali.stimaOre), fmtH(an.totali.oreAllocate), fmt0(an.totali.costoTotale), an.totali.completamento
+    ]);
+  }
+  rows.push([]);
+
+  // === SEZIONE B: Riepilogo Epiche ===
+  rows.push(['# Riepilogo Epiche']);
+  rows.push(['Progetto','Epica','Inizio','Fine','Durata gg','Ore stimate','Ore allocate','Costo €','% completo','Stato','Persone']);
+  an.epiche.forEach(({ progettoLabel, epica, agg, persone }) => {
+    let durataGg = '';
+    if (agg.inizio && agg.fine) {
+      const ms = new Date(agg.fine).getTime() - new Date(agg.inizio).getTime();
+      durataGg = Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
+    }
+    const personeStr = persone
+      .map(p => `${p.nome} ${fmtH(p.ore)}h (${fmt0(p.effort)}%)`)
+      .join(' · ');
+    rows.push([
+      progettoLabel, epica.nome || '', agg.inizio || '', agg.fine || '', durataGg,
+      fmtH(agg.stimaOre), fmtH(agg.oreAllocate), fmt0(agg.costoTotale),
+      agg.completamento, agg.stato, personeStr
+    ]);
+  });
+  rows.push([]);
+
+  // === SEZIONE C: Dettaglio Task (struttura originale) ===
+  rows.push(['# Dettaglio Task']);
+  rows.push(['Progetto','Tipo','Livello','ID Jira','Nome','Stato','Inizio','Fine','Ore stimate','Assegnati']);
   const items = ordineGerarchicoTask(false, ammessi, true);
-  const rows = [['Progetto','Tipo','Livello','ID Jira','Nome','Stato','Inizio','Fine','Ore stimate','Assegnati']];
   items.forEach(({ task: t, livello }) => {
     const progetto = etichettaProgetto(chiaveProgetto(t));
     const tipo = t.tipo || '';
@@ -1582,7 +1638,8 @@ function esportaGanttCSV() {
       .join(' · ');
     rows.push([progetto, tipo, livello, jiraKey, nome, stato_, inizio || '', fine || '', ore, ass]);
   });
-  // CSV: separa con ; (Excel italiano), quote i campi
+
+  // Serializza: separa con ; (Excel italiano), quote i campi non vuoti
   const csv = rows.map(r => r.map(c => {
     const s = String(c == null ? '' : c).replace(/"/g, '""');
     return `"${s}"`;
@@ -1817,6 +1874,16 @@ function popolaFiltri() {
     const a  = bar.querySelector('.filter-data-a');
     if (da) da.value = f.dataDa || '';
     if (a)  a.value  = f.dataA  || '';
+
+    // Auto DA/A (solo Gantt): checkbox + disabilita gli input data quando attiva
+    if (vista === 'gantt') {
+      const chk = bar.querySelector('#filter-auto-range');
+      if (chk) {
+        chk.checked = !!f.autoRange;
+        if (da) da.disabled = !!f.autoRange;
+        if (a)  a.disabled  = !!f.autoRange;
+      }
+    }
   });
 }
 
@@ -2516,6 +2583,212 @@ function aggregaEpica(t) {
   }
 
   return { inizio, fine, stimaOre, oreAllocate, stato: statoEpica, completamento, costoTotale };
+}
+
+// Restituisce le epiche visibili dato un filtro (riusa taskAmmessi per
+// rispettare persone/stati/progetti/team/date). Le epiche selezionate
+// esplicitamente nel filtro hanno precedenza: se l'utente seleziona
+// "Epiche: [A, B]", torna solo A e B (anche se altre passerebbero).
+function epicheVisibili(f) {
+  const ammessi = taskAmmessi(f);
+  const sel = Array.isArray(f?.epiche) ? f.epiche : [];
+  return stato.task.filter(t =>
+    t.tipo === 'epica'
+    && ammessi.has(t.id)
+    && (sel.length === 0 || sel.includes(t.id))
+  );
+}
+
+// Aggregazione cumulativa per UI riepilogo + export CSV.
+// Fonte unica di verità: epiche visibili + raggruppate per progetto + totali.
+function analyticsEpiche(f) {
+  const epiche = epicheVisibili(f);
+  const perProgettoMap = new Map();
+  let totStima = 0, totAlloc = 0, totCosto = 0, totStimaPerPerc = 0, totPercPesata = 0;
+
+  const dettagliEpiche = epiche.map(e => {
+    const agg = aggregaEpica(e);
+    const persone = aggregazioniEpica(e).map(x => ({
+      nome: x.persona?.nome || '',
+      ore: x.ore,
+      costo: x.costo,
+      effort: x.effortSum
+    }));
+    const progKey = chiaveProgetto(e);
+
+    let prog = perProgettoMap.get(progKey);
+    if (!prog) {
+      prog = {
+        key: progKey,
+        nome: etichettaProgetto(progKey),
+        nEpiche: 0,
+        stimaOre: 0,
+        oreAllocate: 0,
+        costoTotale: 0,
+        _stimaPerPerc: 0,
+        _percPesata: 0,
+        inizioMin: null,
+        fineMax: null
+      };
+      perProgettoMap.set(progKey, prog);
+    }
+    prog.nEpiche      += 1;
+    prog.stimaOre     += agg.stimaOre;
+    prog.oreAllocate  += agg.oreAllocate;
+    prog.costoTotale  += agg.costoTotale;
+    if (agg.stimaOre > 0) {
+      prog._stimaPerPerc += agg.stimaOre;
+      prog._percPesata   += agg.completamento * agg.stimaOre;
+    }
+    if (agg.inizio && (!prog.inizioMin || agg.inizio < prog.inizioMin)) prog.inizioMin = agg.inizio;
+    if (agg.fine   && (!prog.fineMax   || agg.fine   > prog.fineMax  )) prog.fineMax   = agg.fine;
+
+    totStima += agg.stimaOre;
+    totAlloc += agg.oreAllocate;
+    totCosto += agg.costoTotale;
+    if (agg.stimaOre > 0) {
+      totStimaPerPerc += agg.stimaOre;
+      totPercPesata   += agg.completamento * agg.stimaOre;
+    }
+
+    return { epica: e, progetto: progKey, progettoLabel: etichettaProgetto(progKey), agg, persone };
+  });
+
+  // Finalizza % completamento pesata per progetto
+  const perProgetto = Array.from(perProgettoMap.values()).map(p => ({
+    key: p.key,
+    nome: p.nome,
+    nEpiche: p.nEpiche,
+    stimaOre: p.stimaOre,
+    oreAllocate: p.oreAllocate,
+    costoTotale: p.costoTotale,
+    completamento: p._stimaPerPerc > 0 ? Math.round(p._percPesata / p._stimaPerPerc) : 0,
+    inizioMin: p.inizioMin,
+    fineMax: p.fineMax
+  })).sort((a, b) => (a.key || '').localeCompare(b.key || ''));
+
+  return {
+    epiche: dettagliEpiche,
+    perProgetto,
+    totali: {
+      nEpiche: epiche.length,
+      nProgetti: perProgetto.length,
+      stimaOre: totStima,
+      oreAllocate: totAlloc,
+      costoTotale: totCosto,
+      completamento: totStimaPerPerc > 0 ? Math.round(totPercPesata / totStimaPerPerc) : 0
+    }
+  };
+}
+
+// Strip riepilogo sopra il Gantt: numero epiche/progetti, ore, costo, % medio.
+// Click -> apre modal con dettaglio per epica.
+function renderGanttSummaryStrip(f) {
+  const strip = document.getElementById('gantt-summary-strip');
+  if (!strip) return;
+  const an = analyticsEpiche(f);
+  const t = an.totali;
+  if (!t.nEpiche) {
+    strip.classList.add('hidden');
+    strip.innerHTML = '';
+    return;
+  }
+  const fmtH = n => Math.round(n * 10) / 10;
+  const fmtEur = n => '€' + (Math.round(n)).toLocaleString('it-IT');
+  strip.classList.remove('hidden');
+  strip.innerHTML = `
+    <span class="gss-item"><strong>${t.nProgetti}</strong> ${t.nProgetti === 1 ? 'progetto' : 'progetti'}</span>
+    <span class="gss-sep">·</span>
+    <span class="gss-item"><strong>${t.nEpiche}</strong> ${t.nEpiche === 1 ? 'epica' : 'epiche'}</span>
+    <span class="gss-sep">·</span>
+    <span class="gss-item"><strong>${fmtH(t.stimaOre)}h</strong> stimate <span class="gss-sub">(${fmtH(t.oreAllocate)}h allocate)</span></span>
+    <span class="gss-sep">·</span>
+    <span class="gss-item"><strong>${fmtEur(t.costoTotale)}</strong></span>
+    <span class="gss-sep">·</span>
+    <span class="gss-item"><strong>${t.completamento}%</strong> medio</span>
+    <span class="gss-action">Apri dettaglio →</span>
+  `;
+}
+
+// Modal con tabella dettaglio per epica (riepilogo + breakdown persone).
+function apriModaleEpiche() {
+  const overlay = document.getElementById('modal-epiche-overlay');
+  const body = document.getElementById('modal-epiche-body');
+  if (!overlay || !body) return;
+  const an = analyticsEpiche(filtri.gantt);
+  const fmtH = n => Math.round(n * 10) / 10;
+  const fmtEur = n => '€' + (Math.round(n)).toLocaleString('it-IT');
+
+  const righeProgetti = an.perProgetto.map(p => `
+    <tr class="riga-progetto">
+      <td>${escapeHtml(p.nome)}</td>
+      <td>${p.nEpiche}</td>
+      <td>${p.inizioMin || ''}</td>
+      <td>${p.fineMax || ''}</td>
+      <td class="num">${fmtH(p.stimaOre)}</td>
+      <td class="num">${fmtH(p.oreAllocate)}</td>
+      <td class="num">${fmtEur(p.costoTotale)}</td>
+      <td class="num">${p.completamento}%</td>
+    </tr>
+  `).join('');
+
+  const righeEpiche = an.epiche.map(({ progettoLabel, epica, agg, persone }) => {
+    let durata = '';
+    if (agg.inizio && agg.fine) {
+      const ms = new Date(agg.fine).getTime() - new Date(agg.inizio).getTime();
+      durata = (Math.round(ms / 86400000) + 1) + 'gg';
+    }
+    const personeStr = persone.map(p => `${escapeHtml(p.nome)} ${fmtH(p.ore)}h`).join(' · ') || '—';
+    return `
+      <tr>
+        <td>${escapeHtml(progettoLabel)}</td>
+        <td>${escapeHtml(epica.nome || '')}</td>
+        <td>${agg.inizio || ''}</td>
+        <td>${agg.fine || ''}</td>
+        <td class="num">${durata}</td>
+        <td class="num">${fmtH(agg.stimaOre)}</td>
+        <td class="num">${fmtH(agg.oreAllocate)}</td>
+        <td class="num">${fmtEur(agg.costoTotale)}</td>
+        <td class="num">${agg.completamento}%</td>
+        <td><span class="stato-pill stato-bg-${agg.stato}">${agg.stato}</span></td>
+        <td class="persone-cell">${personeStr}</td>
+      </tr>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <section class="epiche-section">
+      <h4>Riepilogo per Progetto</h4>
+      <table class="epiche-table">
+        <thead><tr>
+          <th>Progetto</th><th>Epiche</th><th>Inizio</th><th>Fine</th>
+          <th>Ore stim.</th><th>Ore alloc.</th><th>Costo</th><th>% medio</th>
+        </tr></thead>
+        <tbody>${righeProgetti || '<tr><td colspan="8" class="empty">Nessuna epica visibile</td></tr>'}</tbody>
+        ${an.perProgetto.length ? `<tfoot><tr>
+          <td><strong>TOTALE</strong></td>
+          <td>${an.totali.nEpiche}</td>
+          <td></td><td></td>
+          <td class="num">${fmtH(an.totali.stimaOre)}</td>
+          <td class="num">${fmtH(an.totali.oreAllocate)}</td>
+          <td class="num">${fmtEur(an.totali.costoTotale)}</td>
+          <td class="num">${an.totali.completamento}%</td>
+        </tr></tfoot>` : ''}
+      </table>
+    </section>
+    <section class="epiche-section">
+      <h4>Dettaglio Epiche</h4>
+      <table class="epiche-table">
+        <thead><tr>
+          <th>Progetto</th><th>Epica</th><th>Inizio</th><th>Fine</th>
+          <th>Durata</th><th>Ore stim.</th><th>Ore alloc.</th><th>Costo</th>
+          <th>%</th><th>Stato</th><th>Persone</th>
+        </tr></thead>
+        <tbody>${righeEpiche || '<tr><td colspan="11" class="empty">Nessuna epica visibile</td></tr>'}</tbody>
+      </table>
+    </section>
+  `;
+  overlay.classList.remove('hidden');
 }
 
 // Restituisce true se `potenzialeAvo` è antenato di `taskId`, per evitare cicli
@@ -3535,6 +3808,20 @@ const MESI_IT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','No
 // Calcola il range temporale del Gantt.
 // Se sono presenti filtri data → li usa direttamente. Altrimenti deduce dai task + oggi + padding.
 function calcolaRangeGantt(filtro) {
+  // Auto DA/A: comprime il range esattamente sulle epiche visibili
+  // (rispetta gli altri filtri attivi). Niente padding ±gg: vogliamo
+  // la massima compressione.
+  if (filtro?.autoRange) {
+    const epiche = epicheVisibili(filtro);
+    let mn = null, mx = null;
+    epiche.forEach(e => {
+      const a = aggregaEpica(e);
+      if (a.inizio && (!mn || a.inizio < mn)) mn = a.inizio;
+      if (a.fine   && (!mx || a.fine   > mx)) mx = a.fine;
+    });
+    if (mn && mx) return { min: mn, max: mx };
+    // Nessuna epica visibile o senza date -> fallback al comportamento standard
+  }
   if (filtro && filtro.dataDa && filtro.dataA) {
     return { min: filtro.dataDa, max: filtro.dataA };
   }
@@ -3557,6 +3844,8 @@ function calcolaRangeGantt(filtro) {
 function renderGanttListView() {
   const container = document.getElementById('gantt-container');
   if (!container) return;
+
+  renderGanttSummaryStrip(filtri.gantt);
 
   if (!stato.task.length) {
     container.innerHTML = '<p class="empty-state">Nessun task. Premi + in basso per crearne uno.</p>';
@@ -3698,6 +3987,8 @@ function renderGantt() {
   const totaleW = giorni.length * dayW;
   const minDate = new Date(range.min);
   const ammessi = taskAmmessi(filtri.gantt);
+
+  renderGanttSummaryStrip(filtri.gantt);
 
   // --- Header (mesi + giorni) ---
   const mesi = [];
@@ -5665,6 +5956,15 @@ function inizializza() {
       filtri[vista].dataA = e.target.value;
       rerenderVista(vista);
     });
+    // Auto DA/A (solo Gantt): comprime il range sulle epiche visibili
+    bar.querySelector('#filter-auto-range')?.addEventListener('change', e => {
+      filtri.gantt.autoRange = !!e.target.checked;
+      const da = bar.querySelector('.filter-data-da');
+      const a  = bar.querySelector('.filter-data-a');
+      if (da) da.disabled = filtri.gantt.autoRange;
+      if (a)  a.disabled  = filtri.gantt.autoRange;
+      rerenderVista('gantt');
+    });
     bar.querySelector('.filter-reset')?.addEventListener('click', () => {
       filtri[vista].persone  = [];
       filtri[vista].stati    = [];
@@ -5673,12 +5973,28 @@ function inizializza() {
       filtri[vista].epiche   = [];
       filtri[vista].progetti = [];
       filtri[vista].team     = '';
+      if (vista === 'gantt') filtri.gantt.autoRange = false;
       const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
       filtri[vista].dataA   = def.dataA;
       popolaFiltri();
       rerenderVista(vista);
     });
+  });
+
+  // --- Strip riepilogo Gantt: click apre modal analytics epiche ---
+  const summaryStrip = document.getElementById('gantt-summary-strip');
+  if (summaryStrip) {
+    summaryStrip.addEventListener('click', apriModaleEpiche);
+    summaryStrip.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apriModaleEpiche(); }
+    });
+  }
+  document.getElementById('btn-chiudi-modal-epiche')?.addEventListener('click', () => {
+    document.getElementById('modal-epiche-overlay')?.classList.add('hidden');
+  });
+  document.getElementById('modal-epiche-overlay')?.addEventListener('click', e => {
+    if (e.target.id === 'modal-epiche-overlay') e.target.classList.add('hidden');
   });
 
   // --- Export Workload (solo PDF) ---

@@ -247,8 +247,14 @@
           <label class="filter-item">Epica <select class="filter-epica" multiple size="1"></select></label>
           <label class="filter-item">Dal <input type="date" class="filter-data-da"></label>
           <label class="filter-item">Al <input type="date" class="filter-data-a"></label>
+          <label class="filter-item filter-auto-range" title="Comprime automaticamente il range data sulle epiche visibili">
+            <input type="checkbox" id="filter-auto-range"> Auto DA/A su epiche
+          </label>
           <button type="button" class="btn btn-secondary btn-sm filter-reset">Reset filtri</button>
         </div>
+
+        <div id="gantt-summary-strip" class="gantt-summary-strip hidden" role="button" tabindex="0"
+             title="Vedi dettaglio analytics per epica"></div>
 
         <div class="week-strip" id="week-strip">
           <button type="button" class="week-nav" data-week-nav="prev" aria-label="Settimana precedente">‹</button>
@@ -703,6 +709,17 @@
         <button type="button" class="btn btn-secondary btn-sm" id="btn-report-stampa">PDF</button>
       </div>
       <div id="report-body"></div>
+    </div>
+  </div>
+
+  <!-- =================== MODAL ANALYTICS EPICHE =================== -->
+  <div id="modal-epiche-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <header class="modal-header">
+        <h3>Analytics epiche — epiche correntemente visibili</h3>
+        <button class="btn-close" id="btn-chiudi-modal-epiche" type="button">×</button>
+      </header>
+      <div id="modal-epiche-body" class="epiche-modal-body"></div>
     </div>
   </div>
 

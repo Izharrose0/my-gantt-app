@@ -1686,6 +1686,86 @@ body[data-role="viewer"] .wl-task-handle { display: none; }
   }
 }
 
+/* ===== GANTT SUMMARY STRIP (riepilogo analytics sopra il Gantt) ===== */
+.gantt-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.85rem;
+  margin: 0.5rem 0;
+  background: var(--color-surface-2, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text, #e2e8f0);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.gantt-summary-strip:hover,
+.gantt-summary-strip:focus { background: var(--color-surface-3, #334155); outline: none; }
+.gantt-summary-strip.hidden { display: none; }
+.gantt-summary-strip .gss-item strong { color: var(--color-primary, #5e6ad2); font-weight: 600; }
+.gantt-summary-strip .gss-sub { color: var(--color-text-muted, #94a3b8); font-weight: 400; }
+.gantt-summary-strip .gss-sep { color: var(--color-text-muted, #475569); }
+.gantt-summary-strip .gss-action {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--color-primary, #5e6ad2);
+}
+
+/* ===== FILTER CHIP: auto DA/A ===== */
+.filter-bar .filter-auto-range {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.filter-bar .filter-auto-range input[type="checkbox"] { margin: 0; }
+
+/* ===== MODAL ANALYTICS EPICHE ===== */
+.epiche-modal-body { display: flex; flex-direction: column; gap: 1.25rem; }
+.epiche-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--color-text, #e2e8f0);
+}
+.epiche-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.epiche-table th,
+.epiche-table td {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--color-border, #334155);
+  text-align: left;
+  vertical-align: top;
+}
+.epiche-table th {
+  background: var(--color-surface-2, #1e293b);
+  font-weight: 600;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.epiche-table td.num,
+.epiche-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.epiche-table tfoot td { font-weight: 600; border-top: 2px solid var(--color-border, #334155); }
+.epiche-table .empty { text-align: center; color: var(--color-text-muted, #94a3b8); padding: 1rem; }
+.epiche-table .persone-cell { max-width: 280px; font-size: 0.72rem; color: var(--color-text-muted, #cbd5e1); }
+.epiche-table .stato-pill {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: white;
+  text-transform: capitalize;
+}
+
 /* =====================================================================
    ===== FASE 1: DARK THEME OVERRIDES + PILL UI + WEEK STRIP ============
    ===================================================================== */
