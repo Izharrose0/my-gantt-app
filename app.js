@@ -1034,7 +1034,7 @@ function collassaTutteEpicheInizialmente() {
 
 // Filtri (per vista). Persistiti in localStorage per sopravvivere ai reload.
 let filtri = {
-  gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '', autoRange: false },
+  gantt:      { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '', autoRange: false, nascondiCosti: false, nascondiPersone: false, nascondiPercentuale: false },
   workload:   { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' },
   eisenhower: { persone: [], stati: [], epiche: [], progetti: [], epica: '', progetto: '', team: '', dataDa: '', dataA: '' }
 };
@@ -1578,31 +1578,49 @@ function esportaGanttCSV() {
   const f = filtri.gantt;
   const ammessi = taskAmmessi(f);
   const an = analyticsEpiche(f);
+  const hideCosti   = !!f.nascondiCosti;
+  const hidePersone = !!f.nascondiPersone;
+  const hidePerc    = !!f.nascondiPercentuale;
 
   const rows = [];
   const fmt0 = n => Number.isFinite(n) ? Math.round(n).toString() : '';
   const fmtH = n => Number.isFinite(n) ? Math.round(n * 10) / 10 : '';
+  const dropEmpty = arr => arr.filter(x => x !== null);
 
   // === SEZIONE A: Riepilogo Progetti ===
   rows.push(['# Riepilogo Progetti']);
-  rows.push(['Progetto','Epiche','Inizio','Fine','Ore stimate','Ore allocate','Costo €','% completo']);
+  rows.push(dropEmpty([
+    'Progetto','Epiche','Inizio','Fine','Ore stimate','Ore allocate',
+    hideCosti ? null : 'Costo €',
+    hidePerc  ? null : '% completo'
+  ]));
   an.perProgetto.forEach(p => {
-    rows.push([
+    rows.push(dropEmpty([
       p.nome, p.nEpiche, p.inizioMin || '', p.fineMax || '',
-      fmtH(p.stimaOre), fmtH(p.oreAllocate), fmt0(p.costoTotale), p.completamento
-    ]);
+      fmtH(p.stimaOre), fmtH(p.oreAllocate),
+      hideCosti ? null : fmt0(p.costoTotale),
+      hidePerc  ? null : p.completamento
+    ]));
   });
   if (an.perProgetto.length) {
-    rows.push([
+    rows.push(dropEmpty([
       'TOTALE', an.totali.nEpiche, '', '',
-      fmtH(an.totali.stimaOre), fmtH(an.totali.oreAllocate), fmt0(an.totali.costoTotale), an.totali.completamento
-    ]);
+      fmtH(an.totali.stimaOre), fmtH(an.totali.oreAllocate),
+      hideCosti ? null : fmt0(an.totali.costoTotale),
+      hidePerc  ? null : an.totali.completamento
+    ]));
   }
   rows.push([]);
 
   // === SEZIONE B: Riepilogo Epiche ===
   rows.push(['# Riepilogo Epiche']);
-  rows.push(['Progetto','Epica','Inizio','Fine','Durata gg','Ore stimate','Ore allocate','Costo €','% completo','Stato','Persone']);
+  rows.push(dropEmpty([
+    'Progetto','Epica','Inizio','Fine','Durata gg','Ore stimate','Ore allocate',
+    hideCosti   ? null : 'Costo €',
+    hidePerc    ? null : '% completo',
+    'Stato',
+    hidePersone ? null : 'Persone'
+  ]));
   an.epiche.forEach(({ progettoLabel, epica, agg, persone }) => {
     let durataGg = '';
     if (agg.inizio && agg.fine) {
@@ -1612,17 +1630,23 @@ function esportaGanttCSV() {
     const personeStr = persone
       .map(p => `${p.nome} ${fmtH(p.ore)}h (${fmt0(p.effort)}%)`)
       .join(' · ');
-    rows.push([
+    rows.push(dropEmpty([
       progettoLabel, epica.nome || '', agg.inizio || '', agg.fine || '', durataGg,
-      fmtH(agg.stimaOre), fmtH(agg.oreAllocate), fmt0(agg.costoTotale),
-      agg.completamento, agg.stato, personeStr
-    ]);
+      fmtH(agg.stimaOre), fmtH(agg.oreAllocate),
+      hideCosti   ? null : fmt0(agg.costoTotale),
+      hidePerc    ? null : agg.completamento,
+      agg.stato,
+      hidePersone ? null : personeStr
+    ]));
   });
   rows.push([]);
 
   // === SEZIONE C: Dettaglio Task (struttura originale) ===
   rows.push(['# Dettaglio Task']);
-  rows.push(['Progetto','Tipo','Livello','ID Jira','Nome','Stato','Inizio','Fine','Ore stimate','Assegnati']);
+  rows.push(dropEmpty([
+    'Progetto','Tipo','Livello','ID Jira','Nome','Stato','Inizio','Fine','Ore stimate',
+    hidePersone ? null : 'Assegnati'
+  ]));
   const items = ordineGerarchicoTask(false, ammessi, true);
   items.forEach(({ task: t, livello }) => {
     const progetto = etichettaProgetto(chiaveProgetto(t));
@@ -1636,7 +1660,10 @@ function esportaGanttCSV() {
       .map(a => { const p = trovaPersona(a.personaId); return p ? `${p.nome} (${a.effort}%)` : ''; })
       .filter(Boolean)
       .join(' · ');
-    rows.push([progetto, tipo, livello, jiraKey, nome, stato_, inizio || '', fine || '', ore, ass]);
+    rows.push(dropEmpty([
+      progetto, tipo, livello, jiraKey, nome, stato_, inizio || '', fine || '', ore,
+      hidePersone ? null : ass
+    ]));
   });
 
   // Serializza: separa con ; (Excel italiano), quote i campi non vuoti
@@ -1883,6 +1910,12 @@ function popolaFiltri() {
         if (da) da.disabled = !!f.autoRange;
         if (a)  a.disabled  = !!f.autoRange;
       }
+      const chkCosti   = bar.querySelector('#filter-hide-costi');
+      const chkPersone = bar.querySelector('#filter-hide-persone');
+      const chkPerc    = bar.querySelector('#filter-hide-perc');
+      if (chkCosti)   chkCosti.checked   = !!f.nascondiCosti;
+      if (chkPersone) chkPersone.checked = !!f.nascondiPersone;
+      if (chkPerc)    chkPerc.checked    = !!f.nascondiPercentuale;
     }
   });
 }
@@ -2695,19 +2728,18 @@ function renderGanttSummaryStrip(f) {
   }
   const fmtH = n => Math.round(n * 10) / 10;
   const fmtEur = n => '€' + (Math.round(n)).toLocaleString('it-IT');
+  const hideCosti = !!f?.nascondiCosti;
+  const hidePerc  = !!f?.nascondiPercentuale;
+  const parts = [
+    `<span class="gss-item"><strong>${t.nProgetti}</strong> ${t.nProgetti === 1 ? 'progetto' : 'progetti'}</span>`,
+    `<span class="gss-item"><strong>${t.nEpiche}</strong> ${t.nEpiche === 1 ? 'epica' : 'epiche'}</span>`,
+    `<span class="gss-item"><strong>${fmtH(t.stimaOre)}h</strong> stimate <span class="gss-sub">(${fmtH(t.oreAllocate)}h allocate)</span></span>`
+  ];
+  if (!hideCosti) parts.push(`<span class="gss-item"><strong>${fmtEur(t.costoTotale)}</strong></span>`);
+  if (!hidePerc)  parts.push(`<span class="gss-item"><strong>${t.completamento}%</strong> medio</span>`);
   strip.classList.remove('hidden');
-  strip.innerHTML = `
-    <span class="gss-item"><strong>${t.nProgetti}</strong> ${t.nProgetti === 1 ? 'progetto' : 'progetti'}</span>
-    <span class="gss-sep">·</span>
-    <span class="gss-item"><strong>${t.nEpiche}</strong> ${t.nEpiche === 1 ? 'epica' : 'epiche'}</span>
-    <span class="gss-sep">·</span>
-    <span class="gss-item"><strong>${fmtH(t.stimaOre)}h</strong> stimate <span class="gss-sub">(${fmtH(t.oreAllocate)}h allocate)</span></span>
-    <span class="gss-sep">·</span>
-    <span class="gss-item"><strong>${fmtEur(t.costoTotale)}</strong></span>
-    <span class="gss-sep">·</span>
-    <span class="gss-item"><strong>${t.completamento}%</strong> medio</span>
-    <span class="gss-action">Apri dettaglio →</span>
-  `;
+  strip.innerHTML = parts.join('<span class="gss-sep">·</span>') +
+    '<span class="gss-action">Apri dettaglio →</span>';
 }
 
 // Modal con tabella dettaglio per epica (riepilogo + breakdown persone).
@@ -2715,22 +2747,57 @@ function apriModaleEpiche() {
   const overlay = document.getElementById('modal-epiche-overlay');
   const body = document.getElementById('modal-epiche-body');
   if (!overlay || !body) return;
-  const an = analyticsEpiche(filtri.gantt);
+  const f = filtri.gantt;
+  const an = analyticsEpiche(f);
   const fmtH = n => Math.round(n * 10) / 10;
   const fmtEur = n => '€' + (Math.round(n)).toLocaleString('it-IT');
+  const hideCosti   = !!f.nascondiCosti;
+  const hidePersone = !!f.nascondiPersone;
+  const hidePerc    = !!f.nascondiPercentuale;
 
-  const righeProgetti = an.perProgetto.map(p => `
-    <tr class="riga-progetto">
-      <td>${escapeHtml(p.nome)}</td>
-      <td>${p.nEpiche}</td>
-      <td>${p.inizioMin || ''}</td>
-      <td>${p.fineMax || ''}</td>
-      <td class="num">${fmtH(p.stimaOre)}</td>
-      <td class="num">${fmtH(p.oreAllocate)}</td>
-      <td class="num">${fmtEur(p.costoTotale)}</td>
-      <td class="num">${p.completamento}%</td>
-    </tr>
-  `).join('');
+  // ===== Riepilogo Progetti =====
+  const thProj = [
+    '<th>Progetto</th>', '<th>Epiche</th>', '<th>Inizio</th>', '<th>Fine</th>',
+    '<th>Ore stim.</th>', '<th>Ore alloc.</th>',
+    hideCosti ? '' : '<th>Costo</th>',
+    hidePerc  ? '' : '<th>% medio</th>'
+  ].filter(Boolean).join('');
+  const colCountProj = thProj.match(/<th>/g).length;
+
+  const righeProgetti = an.perProgetto.map(p => {
+    const tds = [
+      `<td>${escapeHtml(p.nome)}</td>`,
+      `<td>${p.nEpiche}</td>`,
+      `<td>${p.inizioMin || ''}</td>`,
+      `<td>${p.fineMax || ''}</td>`,
+      `<td class="num">${fmtH(p.stimaOre)}</td>`,
+      `<td class="num">${fmtH(p.oreAllocate)}</td>`,
+      hideCosti ? '' : `<td class="num">${fmtEur(p.costoTotale)}</td>`,
+      hidePerc  ? '' : `<td class="num">${p.completamento}%</td>`
+    ].filter(Boolean).join('');
+    return `<tr class="riga-progetto">${tds}</tr>`;
+  }).join('');
+
+  const tfootProj = an.perProgetto.length ? `<tfoot><tr>${[
+    `<td><strong>TOTALE</strong></td>`,
+    `<td>${an.totali.nEpiche}</td>`,
+    `<td></td>`, `<td></td>`,
+    `<td class="num">${fmtH(an.totali.stimaOre)}</td>`,
+    `<td class="num">${fmtH(an.totali.oreAllocate)}</td>`,
+    hideCosti ? '' : `<td class="num">${fmtEur(an.totali.costoTotale)}</td>`,
+    hidePerc  ? '' : `<td class="num">${an.totali.completamento}%</td>`
+  ].filter(Boolean).join('')}</tr></tfoot>` : '';
+
+  // ===== Dettaglio Epiche =====
+  const thEp = [
+    '<th>Progetto</th>', '<th>Epica</th>', '<th>Inizio</th>', '<th>Fine</th>',
+    '<th>Durata</th>', '<th>Ore stim.</th>', '<th>Ore alloc.</th>',
+    hideCosti   ? '' : '<th>Costo</th>',
+    hidePerc    ? '' : '<th>%</th>',
+    '<th>Stato</th>',
+    hidePersone ? '' : '<th>Persone</th>'
+  ].filter(Boolean).join('');
+  const colCountEp = thEp.match(/<th>/g).length;
 
   const righeEpiche = an.epiche.map(({ progettoLabel, epica, agg, persone }) => {
     let durata = '';
@@ -2739,52 +2806,36 @@ function apriModaleEpiche() {
       durata = (Math.round(ms / 86400000) + 1) + 'gg';
     }
     const personeStr = persone.map(p => `${escapeHtml(p.nome)} ${fmtH(p.ore)}h`).join(' · ') || '—';
-    return `
-      <tr>
-        <td>${escapeHtml(progettoLabel)}</td>
-        <td>${escapeHtml(epica.nome || '')}</td>
-        <td>${agg.inizio || ''}</td>
-        <td>${agg.fine || ''}</td>
-        <td class="num">${durata}</td>
-        <td class="num">${fmtH(agg.stimaOre)}</td>
-        <td class="num">${fmtH(agg.oreAllocate)}</td>
-        <td class="num">${fmtEur(agg.costoTotale)}</td>
-        <td class="num">${agg.completamento}%</td>
-        <td><span class="stato-pill stato-bg-${agg.stato}">${agg.stato}</span></td>
-        <td class="persone-cell">${personeStr}</td>
-      </tr>
-    `;
+    const tds = [
+      `<td>${escapeHtml(progettoLabel)}</td>`,
+      `<td>${escapeHtml(epica.nome || '')}</td>`,
+      `<td>${agg.inizio || ''}</td>`,
+      `<td>${agg.fine || ''}</td>`,
+      `<td class="num">${durata}</td>`,
+      `<td class="num">${fmtH(agg.stimaOre)}</td>`,
+      `<td class="num">${fmtH(agg.oreAllocate)}</td>`,
+      hideCosti   ? '' : `<td class="num">${fmtEur(agg.costoTotale)}</td>`,
+      hidePerc    ? '' : `<td class="num">${agg.completamento}%</td>`,
+      `<td><span class="stato-pill stato-bg-${agg.stato}">${agg.stato}</span></td>`,
+      hidePersone ? '' : `<td class="persone-cell">${personeStr}</td>`
+    ].filter(Boolean).join('');
+    return `<tr>${tds}</tr>`;
   }).join('');
 
   body.innerHTML = `
     <section class="epiche-section">
       <h4>Riepilogo per Progetto</h4>
       <table class="epiche-table">
-        <thead><tr>
-          <th>Progetto</th><th>Epiche</th><th>Inizio</th><th>Fine</th>
-          <th>Ore stim.</th><th>Ore alloc.</th><th>Costo</th><th>% medio</th>
-        </tr></thead>
-        <tbody>${righeProgetti || '<tr><td colspan="8" class="empty">Nessuna epica visibile</td></tr>'}</tbody>
-        ${an.perProgetto.length ? `<tfoot><tr>
-          <td><strong>TOTALE</strong></td>
-          <td>${an.totali.nEpiche}</td>
-          <td></td><td></td>
-          <td class="num">${fmtH(an.totali.stimaOre)}</td>
-          <td class="num">${fmtH(an.totali.oreAllocate)}</td>
-          <td class="num">${fmtEur(an.totali.costoTotale)}</td>
-          <td class="num">${an.totali.completamento}%</td>
-        </tr></tfoot>` : ''}
+        <thead><tr>${thProj}</tr></thead>
+        <tbody>${righeProgetti || `<tr><td colspan="${colCountProj}" class="empty">Nessuna epica visibile</td></tr>`}</tbody>
+        ${tfootProj}
       </table>
     </section>
     <section class="epiche-section">
       <h4>Dettaglio Epiche</h4>
       <table class="epiche-table">
-        <thead><tr>
-          <th>Progetto</th><th>Epica</th><th>Inizio</th><th>Fine</th>
-          <th>Durata</th><th>Ore stim.</th><th>Ore alloc.</th><th>Costo</th>
-          <th>%</th><th>Stato</th><th>Persone</th>
-        </tr></thead>
-        <tbody>${righeEpiche || '<tr><td colspan="11" class="empty">Nessuna epica visibile</td></tr>'}</tbody>
+        <thead><tr>${thEp}</tr></thead>
+        <tbody>${righeEpiche || `<tr><td colspan="${colCountEp}" class="empty">Nessuna epica visibile</td></tr>`}</tbody>
       </table>
     </section>
   `;
@@ -4186,11 +4237,12 @@ function renderGantt() {
     const completamento = isEpica ? agg.completamento : null;
     const costoEur = isEpica ? agg.costoTotale : costoTask(t);
 
+    const fG = filtri.gantt;
     const tooltip = `${t.nome}\n${formatDataBreve(inizio)} → ${formatDataBreve(fine)}` +
       (stima ? `\nStima: ${stima}h` : '') +
-      (costoEur > 0 ? `\nCosto: ${formatEuro(costoEur)}` : '') +
-      (sublabel ? `\n${sublabel}` : '') +
-      (isEpica ? `\n[EPICA · ${completamento}% completato]` : '');
+      (!fG.nascondiCosti && costoEur > 0 ? `\nCosto: ${formatEuro(costoEur)}` : '') +
+      (!fG.nascondiPersone && sublabel ? `\n${sublabel}` : '') +
+      (isEpica && !fG.nascondiPercentuale ? `\n[EPICA · ${completamento}% completato]` : (isEpica ? '\n[EPICA]' : ''));
 
     const classeBarra = isEpica ? 'gantt-bar gantt-bar-epica' : 'gantt-bar';
     const draggableAttr = isEpica ? 'data-readonly="1"' : '';
@@ -4198,17 +4250,21 @@ function renderGantt() {
       <div class="gantt-bar-handle handle-left" data-side="left"></div>
       <div class="gantt-bar-handle handle-right" data-side="right"></div>`;
 
+    // Toggle visualizzazione (filter-bar Gantt)
+    const hideCosti   = !!filtri.gantt.nascondiCosti;
+    const hidePersone = !!filtri.gantt.nascondiPersone;
+    const hidePerc    = !!filtri.gantt.nascondiPercentuale;
     // Sublabel: persone visibili sui task larghi e sulle epiche collassate
-    const showSublabel = sublabel && width > 80 && (!isEpica || collassata);
+    const showSublabel = !hidePersone && sublabel && width > 80 && (!isEpica || collassata);
     // % nel titolo: per le epiche sempre, per i task in-progress il valore custom
     const pctTask = !isEpica && t.tipo === 'task' ? percCompletamento(t) : null;
-    const pctSuffix = isEpica
+    const pctSuffix = hidePerc ? '' : (isEpica
       ? ` · ${completamento}%`
       : (t.stato === 'in-progress' || t.stato === 'done') && pctTask !== null
         ? ` · ${pctTask}%`
-        : '';
+        : '');
     // Costo sull'etichetta: solo per epiche larghe (>120px) per non sporcare le barre piccole
-    const costoSuffix = isEpica && costoEur > 0 && width > 120 ? ` · ${formatEuro(costoEur)}` : '';
+    const costoSuffix = (!hideCosti && isEpica && costoEur > 0 && width > 120) ? ` · ${formatEuro(costoEur)}` : '';
     const etichettaHTML = `
       <span class="gantt-bar-label">
         <span class="gantt-bar-title">${escapeHtml(t.nome)}${pctSuffix}${costoSuffix}</span>
@@ -4217,7 +4273,7 @@ function renderGantt() {
 
     // Barra di progresso: per epiche (% aggregata) e per task in-progress (% custom)
     const pctBarra = isEpica ? completamento : (pctTask || 0);
-    const progressHTML = pctBarra > 0
+    const progressHTML = (!hidePerc && pctBarra > 0)
       ? `<div class="gantt-bar-progress" style="width:${pctBarra}%"></div>`
       : '';
 
@@ -5965,6 +6021,19 @@ function inizializza() {
       if (a)  a.disabled  = filtri.gantt.autoRange;
       rerenderVista('gantt');
     });
+    // Toggles "Nascondi …": applicati a barre Gantt + strip + modal + CSV
+    bar.querySelector('#filter-hide-costi')?.addEventListener('change', e => {
+      filtri.gantt.nascondiCosti = !!e.target.checked;
+      rerenderVista('gantt');
+    });
+    bar.querySelector('#filter-hide-persone')?.addEventListener('change', e => {
+      filtri.gantt.nascondiPersone = !!e.target.checked;
+      rerenderVista('gantt');
+    });
+    bar.querySelector('#filter-hide-perc')?.addEventListener('change', e => {
+      filtri.gantt.nascondiPercentuale = !!e.target.checked;
+      rerenderVista('gantt');
+    });
     bar.querySelector('.filter-reset')?.addEventListener('click', () => {
       filtri[vista].persone  = [];
       filtri[vista].stati    = [];
@@ -5973,7 +6042,12 @@ function inizializza() {
       filtri[vista].epiche   = [];
       filtri[vista].progetti = [];
       filtri[vista].team     = '';
-      if (vista === 'gantt') filtri.gantt.autoRange = false;
+      if (vista === 'gantt') {
+        filtri.gantt.autoRange = false;
+        filtri.gantt.nascondiCosti = false;
+        filtri.gantt.nascondiPersone = false;
+        filtri.gantt.nascondiPercentuale = false;
+      }
       const def = rangeFiltroDefaultPerVista(vista);
       filtri[vista].dataDa  = def.dataDa;
       filtri[vista].dataA   = def.dataA;
