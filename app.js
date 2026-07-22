@@ -63,9 +63,12 @@ function aggiornaUIPermessi() {
     if (label) label.textContent = role === 'owner' ? 'OWNER' : role === 'editor' ? 'EDITOR' : 'VIEW ONLY';
     const base = ruoloEffettivoBase();
     const previewing = role !== base;
-    badge.title = previewing
-      ? `Loggato come ${utenteCorrente.email} (${base}) — anteprima vista ${role}`
-      : `Loggato come ${utenteCorrente.email} — ruolo ${role}`;
+    const email = utenteCorrente?.email || '';
+    badge.title = email
+      ? (previewing
+          ? `Loggato come ${email} (${base}) — anteprima vista ${role}`
+          : `Loggato come ${email} — ruolo ${role}`)
+      : `Non loggato — ruolo ${role}`;
   }
   const logoutLabel = document.getElementById('logout-label');
   if (logoutLabel && utenteCorrente) {
